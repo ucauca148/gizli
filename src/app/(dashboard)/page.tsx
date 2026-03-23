@@ -1,19 +1,70 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { headers } from "next/headers"
+import { prisma } from "@/lib/prisma"
 
-// Dashboard verisini /api/dashboard/summary endpointinden çek
+export const dynamic = 'force-dynamic'
+
+// Doğrudan veritabanı sorgusu atıyoruz (API route yerine)
 async function getSummaryData() {
-  const hostList = headers().get("host")
-  const protocol = process.env.NODE_ENV === "development" ? "http" : "https"
+  const storeId = null; // Gelişmiş aşamada props'tan alınabilir
   
-  // Tam Next.js URL path'i zorunlu olduğu için
-  const fetchUrl = `${protocol}://${hostList}/api/dashboard/summary`
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  const res = await fetch(fetchUrl, { cache: 'no-store' }) // Hep güncel data
-  if (!res.ok) {
-    throw new Error(`API hatası: ${res.statusText}`)
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+
+  const baseWhere = storeId ? { storeId } : {};
+
+  const todayOrders = await prisma.order.findMany({
+    where: { ...baseWhere, createdAt: { gte: today } },
+    select: { status: true, totalAmount: true }
+  });
+
+  const todaySalesCount = todayOrders.length;
+  const todayApprovedCount = todayOrders.filter(o => o.status === "APPROVED").length;
+  const todayCancelledCount = todayOrders.filter(o => o.status === "CANCELLED").length;
+  const todayRevenue = todayOrders
+    .filter(o => o.status === "APPROVED")
+    .reduce((sum, o) => sum + Number(o.totalAmount), 0);
+
+  const last7DaysOrders = await prisma.order.findMany({
+    where: {
+      ...baseWhere,
+      createdAt: { gte: sevenDaysAgo },
+      status: { in: ["PENDING", "APPROVED"] },
+    },
+    select: { createdAt: true, totalAmount: true }
+  });
+
+  const daysMap = new Map<string, { salesCount: number; revenue: number }>();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0]; 
+    daysMap.set(dateStr, { salesCount: 0, revenue: 0 });
   }
-  return res.json()
+
+  last7DaysOrders.forEach(order => {
+    const dateStr = order.createdAt.toISOString().split("T")[0];
+    if (daysMap.has(dateStr)) {
+      const current = daysMap.get(dateStr)!;
+      current.salesCount += 1;
+      current.revenue += Number(order.totalAmount);
+    }
+  });
+
+  const last7DaysChart = Array.from(daysMap.entries())
+    .map(([date, data]) => ({ date, ...data }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    todaySalesCount,
+    todayApprovedCount,
+    todayCancelledCount,
+    todayRevenue,
+    last7DaysChart,
+  };
 }
 
 export default async function DashboardPage() {
@@ -28,73 +79,73 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <div className="flex flex-col gap-1 mb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Genel Bakış</h1>
-        <p className="text-muted-foreground">Mağaza performansını ve anlık satışları buradan takip edebilirsiniz.</p>
+      <div className="flex flex-col gap-1 mb-6">
+        <h1 className="text-3xl font-extrabold tracking-tight text-white animate-fade-in">Genel Bakış</h1>
+        <p className="text-zinc-400 font-medium">Mağaza performansını ve anlık satışları buradan takip edebilirsiniz.</p>
       </div>
 
       {error ? (
-        <Card className="border-destructive bg-destructive/10">
+        <Card className="border-red-500 bg-red-950/20">
           <CardHeader>
-            <CardTitle className="text-destructive">Veri Çekme Hatası</CardTitle>
-            <CardDescription className="text-destructive/80">{error}</CardDescription>
+            <CardTitle className="text-red-400">Veri Çekme Hatası</CardTitle>
+            <CardDescription className="text-red-400/80">{error}</CardDescription>
           </CardHeader>
         </Card>
       ) : summary ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Toplam Sipariş (Bugün)</CardTitle>
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="bg-gradient-to-br from-black/40 to-primary/5 border-primary/10">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+              <CardTitle className="text-sm font-semibold text-zinc-300">Toplam Sipariş (Bugün)</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summary.todaySalesCount}</div>
+            <CardContent className="relative z-10">
+              <div className="text-3xl font-bold text-white tracking-tight">{summary.todaySalesCount}</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Toplam Ciro (Bugün)</CardTitle>
+          <Card className="bg-gradient-to-br from-black/40 to-primary/5 border-primary/10">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+              <CardTitle className="text-sm font-semibold text-zinc-300">Toplam Ciro (Bugün)</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summary.todayRevenue} ₺</div>
+            <CardContent className="relative z-10">
+              <div className="text-3xl font-bold text-white tracking-tight">{summary.todayRevenue} <span className="text-xl text-zinc-500">₺</span></div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Onaylanan (Bugün)</CardTitle>
+          <Card className="bg-gradient-to-br from-black/40 to-emerald-900/10 border-emerald-500/10">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+              <CardTitle className="text-sm font-semibold text-zinc-300">Onaylanan (Bugün)</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-500">{summary.todayApprovedCount}</div>
+            <CardContent className="relative z-10">
+              <div className="text-3xl font-bold text-emerald-400 tracking-tight">{summary.todayApprovedCount}</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">İptal Edilen (Bugün)</CardTitle>
+          <Card className="bg-gradient-to-br from-black/40 to-red-900/10 border-red-500/10">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+              <CardTitle className="text-sm font-semibold text-zinc-300">İptal Edilen (Bugün)</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-500">{summary.todayCancelledCount}</div>
+            <CardContent className="relative z-10">
+              <div className="text-3xl font-bold text-red-400 tracking-tight">{summary.todayCancelledCount}</div>
             </CardContent>
           </Card>
         </div>
       ) : (
-        <div className="flex p-12 w-full justify-center items-center text-muted-foreground animate-pulse">
-          Veriler Yükleniyor...
+        <div className="flex p-12 w-full justify-center items-center text-zinc-500 animate-pulse font-medium">
+          Sistem Verileri Yükleniyor...
         </div>
       )}
 
-      {/* Son 7 Gün - MVP Grafiği (Basit Kart Listesi) */}
+      {/* Son 7 Gün - MVP Grafiği */}
       {summary && (
-        <Card className="col-span-4 mt-6">
-          <CardHeader>
-            <CardTitle>Son 7 Günlük Performans</CardTitle>
-            <CardDescription>Gelir ve sipariş alışkanlıkları</CardDescription>
+        <Card className="col-span-4 mt-8 bg-black/20 border-white/5">
+          <CardHeader className="relative z-10">
+            <CardTitle className="text-xl text-white">Son 7 Günlük Performans</CardTitle>
+            <CardDescription className="text-zinc-400">Gelir ve sipariş alışkanlıkları seyri</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex gap-4 overflow-x-auto pb-4">
+          <CardContent className="relative z-10">
+            <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
               {summary.last7DaysChart?.map((day: any) => (
-                <div key={day.date} className="flex flex-col items-center justify-center bg-muted/50 p-4 rounded-xl min-w-[120px] border">
-                  <span className="text-xs text-muted-foreground mb-1">{day.date}</span>
-                  <span className="font-bold text-lg">{day.revenue} ₺</span>
-                  <span className="text-xs mt-1">{day.salesCount} Satış</span>
+                <div key={day.date} className="flex flex-col items-center justify-center bg-white/5 hover:bg-white/10 transition-colors duration-300 p-5 rounded-2xl min-w-[130px] border border-white/5 shadow-inner">
+                  <span className="text-xs text-zinc-400 mb-2 font-medium">{day.date}</span>
+                  <span className="font-bold text-xl text-white tracking-tight">{day.revenue} ₺</span>
+                  <span className="text-[11px] mt-2 text-primary/80 font-bold uppercase tracking-wider">{day.salesCount} Satış</span>
                 </div>
               ))}
             </div>
