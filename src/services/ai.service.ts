@@ -1,11 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// API Anahtarı kontrolü
 const apiKey = process.env.GEMINI_API_KEY || "";
-if (!apiKey) {
-  console.warn("DIKKAT: GEMINI_API_KEY tanımlı değil!");
-}
-
 const genAI = new GoogleGenerativeAI(apiKey);
 
 export async function analyzeCompetitorPerformance(
@@ -17,7 +12,9 @@ export async function analyzeCompetitorPerformance(
     return "AI Analizi yapılamadı: GEMINI_API_KEY eksik. Lütfen Vercel veya .env üzerinden anahtarınızı tanımlayın.";
   }
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  // Denenecek model listesi (Fallback yapısı)
+  const modelsToTry = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-pro"];
+  let lastError = "";
 
   const prompt = `
     Sen profesyonel bir e-ticaret ve rekabet analisti asistanısın. 
@@ -35,16 +32,22 @@ export async function analyzeCompetitorPerformance(
     Yanıtın kısa, öz, Türkçe ve profesyonel olsun. Markdown formatında başlıklarla yaz.
   `;
 
-  try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
-  } catch (error: any) {
-    console.error("Gemini AI Hatası:", error);
-    // Hatanın detayını kullanıcıya güvenli bir şekilde gösterelim (örn: quota exceeded)
-    if (error.message?.includes("429")) return "Hata: Limit aşımı (429). Lütfen 1 dakika sonra tekrar deneyin.";
-    if (error.message?.includes("403")) return "Hata: API Anahtarı yetkisiz (403). Lütfen geçerli bir anahtar girdiğinizden emin olun.";
-    
-    return `AI Analizi şu an yapılamadı. Hata: ${error.message || "Bilinmiyor"}`;
+  for (const modelName of modelsToTry) {
+    try {
+      console.log(`[AI] ${modelName} modeli ile içerik üretiliyor...`);
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      return response.text();
+    } catch (error: any) {
+      console.error(`[AI] ${modelName} hatası:`, error.message);
+      lastError = error.message;
+      // Eğer hata 404 ise bir sonraki modeli dene, değilse (örn 401, 429) direkt dön
+      if (!error.message?.includes("404")) {
+        break;
+      }
+    }
   }
+
+  return `AI Analizi yapılamadı. Hata: ${lastError || "Modeller bulunamadı"}`;
 }
