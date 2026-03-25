@@ -28,11 +28,11 @@ export async function processWebhookPayload(eventId: string) {
       return;
     }
 
-    // Esnek Event Tipi Belirleme (İtemSatış şeması belirsiz olduğu için varsayımlar)
-    const eventType = payload.event_type || payload.type || payload.action || "UNKNOWN";
+    // Esnek Event Tipi Belirleme (İtemSatış şeması 'event' kullanabiliyor)
+    const eventType = payload.event || payload.event_type || payload.type || payload.action || "UNKNOWN";
     
     // Geçici "UNMAPPED" akışı: Bilinen eventler listesinde yoksa güvenle logla, hata fırlatma
-    const knownEvents = ["order.created", "order.approved", "order.cancelled"];
+    const knownEvents = ["order.created", "order.approved", "order.cancelled", "product.out_of_stock"];
     
     if (!knownEvents.includes(eventType)) {
       await prisma.webhookEvent.update({

@@ -46,6 +46,7 @@ export default async function WebhooksPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Tarih</TableHead>
+                    <TableHead>Mağaza</TableHead>
                     <TableHead>Olay Tipi</TableHead>
                     <TableHead>Statü</TableHead>
                     <TableHead>Hata Mesajı</TableHead>
@@ -56,6 +57,9 @@ export default async function WebhooksPage() {
                     <TableRow key={h.id}>
                       <TableCell className="whitespace-nowrap">
                         {new Date(h.receivedAt).toLocaleString('tr-TR')}
+                      </TableCell>
+                      <TableCell className="font-semibold text-primary">
+                        {h.source?.replace("ITEMSatis-", "") || "Bilinmiyor"}
                       </TableCell>
                       <TableCell className="font-medium whitespace-nowrap">
                         {h.eventType || "Bilinmiyor"}
