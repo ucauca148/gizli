@@ -19,7 +19,10 @@ export async function getCompetitors() {
   });
 }
 
-export async function scrapeCompetitor(competitorId: string) {
+/**
+ * Rakip mağazanın son X günlük satışlarını (orumlarını) sayfalama ile tarar.
+ */
+export async function scrapeCompetitor(competitorId: string, days: number = 30) {
   const competitor = await prisma.competitor.findUnique({ 
     where: { id: competitorId } 
   });
@@ -32,44 +35,69 @@ export async function scrapeCompetitor(competitorId: string) {
 
   if (!userId) throw new Error("Mağaza ID'si (UserId) URL'den okunamadı. İtemSatış profil linki olduğundan emin olun.");
 
-  // API'den yorumları çek (Page 1)
-  const response = await fetch(`https://www.itemsatis.com/api/getProfileComments?userId=${userId}&page=1`, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "application/json"
-    }
-  });
-  
-  if (!response.ok) throw new Error(`İtemSatış API hatası: ${response.statusText}`);
-
-  const data = await response.json();
-  const comments = data.comments || [];
-
   const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const cutoffDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
-  let totalSalesIn24h = 0;
-  const productDistribution: Record<string, number> = {};
+  let page = 1;
+  let hasMore = true;
+  let totalSalesInPeriod = 0;
+  
+  // Ürün bazlı detaylı dağılım (Her ürünün linkini ve satış sayısını saklar)
+  const productData: Record<string, { title: string, link: string, count: number }> = {};
 
-  comments.forEach((comment: any) => {
-    // "26 Mart 2025, 22:07"
-    if (!comment.commentDate) return;
-    
-    const commentDate = parseTurkishDate(comment.commentDate);
+  while (hasMore) {
+    // API'den bir sayfadaki yorumları çek
+    const response = await fetch(`https://www.itemsatis.com/api/getProfileComments?userId=${userId}&PageNumber=${page}&sekme=degerlendirmeler`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json"
+      }
+    });
 
-    if (commentDate >= yesterday) {
-      totalSalesIn24h++;
-      const productName = comment.productName || "Bilinmeyen Ürün";
-      productDistribution[productName] = (productDistribution[productName] || 0) + 1;
+    if (!response.ok) break;
+
+    const resJson = await response.json();
+    const comments = resJson.data || [];
+
+    if (comments.length === 0) break;
+
+    for (const comment of comments) {
+      // "23 Mart 2026 , 18:53" ( virgüllü veya virgulsüz formatı destekler)
+      const dateStr = comment.Datetime ? comment.Datetime.replace(/ , /g, " ") : ""; 
+      const commentDate = parseTurkishDate(dateStr);
+
+      if (commentDate < cutoffDate) {
+        hasMore = false;
+        break;
+      }
+
+      totalSalesInPeriod++;
+      const advertId = comment.advertID || comment.AdvertId;
+      const title = comment.SeoTitle || "Bilinmeyen Ürün";
+      const category = comment.SeoCategoryName || "urun";
+      
+      const productKey = `${advertId}`;
+      if (!productData[productKey]) {
+        productData[productKey] = {
+          title: title.replace(/-/g, " "),
+          link: `https://www.itemsatis.com/${category}/${title}-${advertId}.html`,
+          count: 0
+        };
+      }
+      productData[productKey].count++;
     }
-  });
+
+    page++;
+    // Güvenlik sınırı (Çok fazla sayfa olmasını önler)
+    if (page > 20) break; 
+  }
 
   // Analiz sonucunu kaydet
   return await prisma.competitorAnalysis.create({
     data: {
       competitorId,
-      totalReviews: totalSalesIn24h,
-      resultJson: productDistribution as any,
+      totalReviews: totalSalesInPeriod,
+      resultJson: productData as any,
     }
   });
 }

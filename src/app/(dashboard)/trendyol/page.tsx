@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, RefreshCw, Target, TrendingUp, AlertCircle, Loader2 } from "lucide-react"
+import { Plus, RefreshCw, Target, TrendingUp, AlertCircle, Loader2, ExternalLink, BrainCircuit, ChevronDown, ChevronUp } from "lucide-react"
 
 export default function TrendyolPage() {
   const [competitors, setCompetitors] = useState<any[]>([])
@@ -13,6 +13,9 @@ export default function TrendyolPage() {
   const [url, setUrl] = useState("")
   const [loading, setLoading] = useState(false)
   const [analyzingId, setAnalyzingId] = useState<string | null>(null)
+  const [aiLoadingId, setAiLoadingId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [aiInsights, setAiInsights] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetchCompetitors()
@@ -45,139 +48,233 @@ export default function TrendyolPage() {
     setAnalyzingId(id)
     const res = await fetch(`/api/competitors/${id}/analyze`, { method: "POST" })
     const data = await res.json()
-    if (data.error) {
-      alert("Hata: " + data.error)
-    }
+    if (data.error) alert("Hata: " + data.error)
     fetchCompetitors()
     setAnalyzingId(null)
   }
 
+  async function handleAIAnalysis(id: string) {
+    setAiLoadingId(id)
+    const res = await fetch(`/api/competitors/${id}/ai-analysis`, { method: "POST" })
+    const data = await res.json()
+    if (data.error) {
+      alert("Hata: " + data.error)
+    } else {
+      setAiInsights(prev => ({ ...prev, [id]: data.insight }))
+    }
+    setAiLoadingId(null)
+  }
+
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-1 mb-2">
-        <h1 className="text-3xl font-extrabold tracking-tight text-white animate-fade-in flex items-center gap-3">
-          <TrendingUp className="text-primary h-8 w-8" />
-          Trendyol / Rakip Analizi
-        </h1>
-        <p className="text-zinc-400 font-medium italic">Rakiplerinizin son 24 saatlik satışlarını (yorum tabanlı) anlık takip edin.</p>
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-black tracking-tight text-white animate-fade-in flex items-center gap-3">
+            <TrendingUp className="text-primary h-10 w-10 drop-shadow-[0_0_15px_rgba(168,85,247,0.5)]" />
+            Rakip Analiz Merkezi
+          </h1>
+          <p className="text-zinc-400 font-medium italic text-lg">
+            İtemSatış rakiplerinizin son 30 günlük satışlarını ve ürün bazlı stratejilerini Gemini AI ile çözün.
+          </p>
+        </div>
       </header>
 
       {/* Rakip Ekleme Formu */}
-      <Card className="bg-black/40 border-white/10 backdrop-blur-md shadow-2xl">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg flex items-center gap-2">
+      <Card className="glass-panel relative overflow-hidden border-white/10 bg-black/40">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+          <Plus className="h-24 w-24 text-primary" />
+        </div>
+        <CardHeader>
+          <CardTitle className="text-xl flex items-center gap-2 text-white">
             <Plus className="h-5 w-5 text-primary" />
-            Yeni Rakip Mağaza Ekle
+            Yeni Rakip Ekle
           </CardTitle>
-          <CardDescription>Takip etmek istediğiniz İtemSatış mağaza profil linkini girin.</CardDescription>
+          <CardDescription className="text-zinc-500">Takip listenize yeni bir mağaza ekleyin.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col md:flex-row gap-3">
-            <Input 
-              placeholder="Mağaza İsmi (Örn: Rakiplerin Kralı)" 
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="bg-black/50 border-white/5 text-white h-11"
-            />
-            <Input 
-              placeholder="Profil URL (https://www.itemsatis.com/profil/...)" 
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="bg-black/50 border-white/5 text-white h-11"
-            />
-            <Button onClick={handleAdd} disabled={loading} className="bg-primary hover:bg-primary/80 text-white font-bold h-11 px-8 rounded-xl shrink-0 shadow-lg shadow-primary/20">
-              {loading ? <Loader2 className="animate-spin h-5 w-5" /> : "Takibe Al"}
-            </Button>
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 space-y-1">
+              <label className="text-[10px] uppercase font-bold text-zinc-500 px-1 italic">Mağaza İsmi</label>
+              <Input 
+                placeholder="Örn: Rakiplerin Kralı" 
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="bg-black/50 border-white/5 text-white h-12 rounded-xl focus:ring-primary/50"
+              />
+            </div>
+            <div className="flex-[2] space-y-1">
+              <label className="text-[10px] uppercase font-bold text-zinc-500 px-1 italic">İtemSatış Profil URL</label>
+              <Input 
+                placeholder="https://www.itemsatis.com/profil/..." 
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                className="bg-black/50 border-white/5 text-white h-12 rounded-xl focus:ring-primary/50"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={handleAdd} disabled={loading} className="bg-primary hover:bg-primary/80 text-white font-bold h-12 px-10 rounded-xl shadow-lg shadow-primary/20 transition-all hover:scale-[1.02]">
+                {loading ? <Loader2 className="animate-spin h-5 w-5" /> : "Listeye Ekle"}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Rakip Listesi */}
-      <Card className="bg-black/20 border-white/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Target className="h-6 w-6 text-zinc-400" />
-            Takip Edilen Rakipler
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-2xl border border-white/5 overflow-hidden">
-            <Table>
-              <TableHeader className="bg-white/5">
-                <TableRow className="hover:bg-transparent border-white/5">
-                  <TableHead className="text-zinc-300">Mağaza</TableHead>
-                  <TableHead className="text-zinc-300">Platform</TableHead>
-                  <TableHead className="text-zinc-300 text-center">Son 24 Saat Satış</TableHead>
-                  <TableHead className="text-zinc-300">Son Analiz</TableHead>
-                  <TableHead className="text-right text-zinc-300">İşlem</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {competitors.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-12 text-zinc-500 italic">
-                      Henüz hiç rakip eklemediniz.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  competitors.map((comp) => {
-                    const lastAnalysis = comp.analyses?.[0]
-                    return (
-                      <TableRow key={comp.id} className="border-white/5 hover:bg-white/5 transition-colors group">
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-bold text-white group-hover:text-primary transition-colors">{comp.name}</span>
-                            <a href={comp.url} target="_blank" className="text-[10px] text-zinc-500 hover:text-zinc-300 truncate max-w-[200px]">{comp.url}</a>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="px-2 py-1 rounded-md bg-zinc-800 text-zinc-300 text-[10px] font-bold uppercase tracking-wider">
-                            {comp.platform}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {lastAnalysis ? (
-                            <div className="inline-flex flex-col items-center">
-                              <span className="text-2xl font-black text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">
-                                {lastAnalysis.totalReviews}
-                              </span>
-                              <span className="text-[9px] uppercase font-bold text-zinc-500">Tahmini Satış</span>
+      <div className="grid gap-6">
+        {competitors.length === 0 ? (
+          <Card className="bg-black/20 border-white/5 border-dashed py-20 text-center">
+            <CardContent>
+              <Target className="h-12 w-12 text-zinc-700 mx-auto mb-4" />
+              <p className="text-zinc-500 font-medium tracking-wide">Henüz takip edilen bir rakip bulunmuyor.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          competitors.map((comp) => {
+            const lastAnalysis = comp.analyses?.[0]
+            const productMap = lastAnalysis?.resultJson as Record<string, any> || {}
+            const isExpanded = expandedId === comp.id
+
+            return (
+              <Card key={comp.id} className={`transition-all duration-300 border-white/5 ${isExpanded ? 'bg-zinc-900/40 ring-1 ring-primary/20' : 'bg-black/30 hover:bg-black/40'}`}>
+                <CardHeader className="pb-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-3">
+                        <CardTitle className="text-2xl font-black text-white">{comp.name}</CardTitle>
+                        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold border border-primary/20">
+                          İTEMSATIŞ
+                        </span>
+                      </div>
+                      <a href={comp.url} target="_blank" className="text-xs text-zinc-500 hover:text-primary flex items-center gap-1 transition-colors">
+                        {comp.url} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-center px-6 border-r border-white/5">
+                        <p className="text-[10px] uppercase font-bold text-zinc-500 mb-1">Son 30 Gün Satış</p>
+                        <p className="text-3xl font-black text-emerald-400 leading-none tracking-tight">
+                          {lastAnalysis ? lastAnalysis.totalReviews : "-"}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Button 
+                          onClick={() => handleAnalyze(comp.id)}
+                          disabled={analyzingId === comp.id}
+                          variant="outline"
+                          className="h-9 bg-white/5 border-white/10 text-white font-bold hover:bg-white/10 rounded-lg text-xs"
+                        >
+                          {analyzingId === comp.id ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : <><RefreshCw className="h-3.5 w-3.5 mr-2" /> 30 Günlük Tara</>}
+                        </Button>
+                        <Button 
+                          onClick={() => setExpandedId(isExpanded ? null : comp.id)}
+                          variant="ghost" 
+                          className="h-9 text-zinc-400 hover:text-white text-xs font-bold"
+                        >
+                          {isExpanded ? <><ChevronUp className="h-4 w-4 mr-1" /> Gizle</> : <><ChevronDown className="h-4 w-4 mr-1" /> Detaylar</>}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                
+                {isExpanded && (
+                  <CardContent className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="grid md:grid-cols-2 gap-6 border-t border-white/5 pt-6">
+                      {/* Ürün Listesi */}
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-bold text-zinc-400 flex items-center gap-2">
+                          <Package className="h-4 w-4 text-primary" />
+                          En Çok Satan İlanlar
+                        </h4>
+                        <div className="rounded-xl border border-white/5 overflow-hidden bg-black/20">
+                          <Table>
+                            <TableHeader className="bg-white/5">
+                              <TableRow className="hover:bg-transparent border-white/5">
+                                <TableHead className="text-[11px] font-bold text-zinc-500">İlan Adı</TableHead>
+                                <TableHead className="text-[11px] font-bold text-zinc-500 text-center">Satış</TableHead>
+                                <TableHead className="text-[11px] font-bold text-zinc-500 text-right">Git</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {Object.keys(productMap).length > 0 ? (
+                                Object.entries(productMap)
+                                  .sort(([, a], [, b]) => b.count - a.count)
+                                  .map(([key, p]) => (
+                                    <TableRow key={key} className="border-white/5 hover:bg-white/5">
+                                      <TableCell className="text-xs font-medium text-zinc-300 max-w-[200px] truncate">{p.title}</TableCell>
+                                      <TableCell className="text-center font-bold text-emerald-400 text-sm">{p.count}</TableCell>
+                                      <TableCell className="text-right">
+                                        <a href={p.link} target="_blank" className="text-primary hover:text-white transition-colors">
+                                          <ExternalLink className="h-4 w-4" />
+                                        </a>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={3} className="text-center py-6 text-zinc-600 italic text-xs">Veri yok</TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+
+                      {/* AI Analizi */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-zinc-400 flex items-center gap-2">
+                            <BrainCircuit className="h-4 w-4 text-primary" />
+                            Gemini AI Strateji Raporu
+                          </h4>
+                          <Button 
+                            onClick={() => handleAIAnalysis(comp.id)}
+                            disabled={aiLoadingId === comp.id || !lastAnalysis}
+                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold h-8 px-4 rounded-lg text-[10px] shadow-lg shadow-purple-900/20"
+                          >
+                            {aiLoadingId === comp.id ? <Loader2 className="animate-spin h-3.5 w-3.5 mr-2" /> : <RefreshCw className="h-3.5 w-3.5 mr-2" />}
+                            AI ANALİZİ OLUŞTUR
+                          </Button>
+                        </div>
+                        <div className="min-h-[200px] bg-zinc-950/50 border border-white/5 rounded-2xl p-6 text-sm text-zinc-300 leading-relaxed italic relative overflow-hidden">
+                          {aiInsights[comp.id] ? (
+                            <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap">
+                              {aiInsights[comp.id]}
                             </div>
                           ) : (
-                            <span className="text-zinc-600 italic text-xs">Henüz taranmadı</span>
+                            <div className="flex flex-col items-center justify-center h-full gap-3 opacity-30">
+                              <BrainCircuit className="h-10 w-10" />
+                              <p className="text-xs text-center">Analiz verisini topladıktan sonra Gemini\'nin bu rakip hakkındaki yorumlarını buraya dökebiliriz.</p>
+                            </div>
                           )}
-                        </TableCell>
-                        <TableCell className="text-zinc-400 text-xs font-medium">
-                          {lastAnalysis ? new Date(lastAnalysis.createdAt).toLocaleString("tr-TR") : "-"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleAnalyze(comp.id)}
-                            disabled={analyzingId === comp.id}
-                            className="bg-white/5 border-white/10 hover:bg-white/10 text-white rounded-xl h-9 px-4 font-bold"
-                          >
-                            {analyzingId === comp.id ? <Loader2 className="animate-spin h-4 w-4" /> : <><RefreshCw className="h-4 w-4 mr-2" /> Analiz Et</>}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
+                          {!aiInsights[comp.id] && aiLoadingId === comp.id && (
+                            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center gap-3">
+                              <Loader2 className="animate-spin h-6 w-6 text-primary" />
+                              <span className="font-bold text-primary animate-pulse">Gemini Düşünüyor...</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
                 )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+              </Card>
+            )
+          })
+        )}
+      </div>
 
-      {/* Bilgi Kutusu */}
-      <div className="bg-primary/10 border border-primary/20 p-5 rounded-2xl flex items-start gap-4">
-        <AlertCircle className="h-6 w-6 text-primary shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <h4 className="text-primary font-bold">Analiz Mantığı Hakkında</h4>
-          <p className="text-sm text-zinc-400 leading-relaxed">
-            Bu analiz, rakip mağazanın son 24 saat içinde aldığı ürün yorumlarını saniye saniye takip eder. İtemSatış platformunda her yorum başarılı bir siparişin kanıtı olduğundan, **Yorum Sayısı = Minimum Satış Adedi** olarak raporlanır.
+      {/* Alt Bilgi */}
+      <div className="bg-zinc-900/40 border border-white/5 p-6 rounded-3xl flex items-center gap-5">
+        <div className="h-12 w-12 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30">
+          <AlertCircle className="h-6 w-6 text-primary" />
+        </div>
+        <div>
+          <h4 className="text-white font-bold text-lg">Pazar Hakimiyeti Planı</h4>
+          <p className="text-sm text-zinc-500 max-w-2xl mt-1 leading-relaxed">
+            Bu modül, rakiplerinizin hangi ürünlerle öne geçtiğini ve müşteri talebinin hangi yöne kaydığını saptamanız için tasarlandı. 
+            **Gemini 1.5 Flash** altyapısı ile pazar verilerini kullanarak size stratejik bir "Yol Haritası" sunar.
           </p>
         </div>
       </div>
