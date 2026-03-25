@@ -108,3 +108,28 @@ model Task {
 
   @@map("tasks")
 }
+
+model Competitor {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  url       String   @unique // Mağaza profil URL'si
+  platform  String   @default("itemsatis") // itemsatis, trendyol vb.
+  createdAt DateTime @default(now()) @map("created_at")
+
+  analyses  CompetitorAnalysis[]
+
+  @@map("competitors")
+}
+
+model CompetitorAnalysis {
+  id           String   @id @default(uuid()) @db.Uuid
+  competitorId String   @db.Uuid @map("competitor_id")
+  totalReviews Int      @default(0) @map("total_reviews") // Son 24 saatteki toplam yorum
+  resultJson   Json?    @map("result_json") // Ürün bazlı detaylı dağılım
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@index([competitorId])
+  @@map("competitor_analyses")
+}
