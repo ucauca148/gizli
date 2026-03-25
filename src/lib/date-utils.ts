@@ -1,5 +1,6 @@
 /**
- * İtemSatış'tan gelen "26 Mart 2025, 22:07" formatındaki Türkçe tarihleri parse eder.
+ * İtemSatış'tan gelen "26 Mart 2025, 22:07" veya "26 Mart 2025 , 22:07" formatındaki 
+ * Türkçe tarihleri parse eder.
  */
 export function parseTurkishDate(dateStr: string): Date {
   const months: Record<string, number> = {
@@ -8,18 +9,32 @@ export function parseTurkishDate(dateStr: string): Date {
   };
 
   try {
-    // "26 Mart 2025, 22:07" -> ["26", "Mart", "2025,", "22:07"]
-    const parts = dateStr.split(" ");
+    // Virgülleri temizle ve fazla boşlukları teklileştir
+    const cleanStr = dateStr.replace(/,/g, " ").replace(/\s+/g, " ").trim();
+    const parts = cleanStr.split(" ");
+    
+    // ["26", "Mart", "2025", "22:07"]
     const day = parseInt(parts[0]);
     const month = months[parts[1]];
-    const year = parseInt(parts[2].replace(",", ""));
-    const timeParts = parts[3].split(":");
-    const hour = parseInt(timeParts[0]);
-    const minute = parseInt(timeParts[1]);
+    const year = parseInt(parts[2]);
+    
+    // Saat/dakika varsa (22:07)
+    let hour = 0;
+    let minute = 0;
+    if (parts[3] && parts[3].includes(":")) {
+      const timeParts = parts[3].split(":");
+      hour = parseInt(timeParts[0]);
+      minute = parseInt(timeParts[1]);
+    }
+
+    if (isNaN(day) || month === undefined || isNaN(year)) {
+      throw new Error("Geçersiz tarih bileşenleri");
+    }
 
     return new Date(year, month, day, hour, minute);
   } catch (e) {
     console.error("Tarih parse hatası:", dateStr, e);
-    return new Date(0); // Hata durumunda çok eski bir tarih dön (24h filtresine takılsın)
+    // Hata durumunda çok eski bir tarih dönerek filtreye takılmasını sağla
+    return new Date(0); 
   }
 }

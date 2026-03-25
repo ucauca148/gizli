@@ -1,5 +1,0 @@
-ement="top" style="background:url(https://cdn.itemsatis.com/uploads/medals/epin-canavari-rozet.png)" title="E-Pin Canavarı&#013;Bu üye 500 den fazla kod alışverişi yaptı."></div></a>						</div>
-													<div class="profileBtns">
-								<a href="#" class="btn header-button btn-follow" data-id="2118"><i class="fas fa-user-check"></i> Takip Et</a><a onclick="saticiIleSohbet(this)" data-user="OpssGamerShop" class="btn header-button btn-message"><i class="fas fa-comments"></i> Sohbet</a>							</div>
-														<div style="margin-top: 5px; display: flex; align-items: center;">
-								<i c
