@@ -5,7 +5,6 @@ import { parseTurkishDate } from "@/lib/date-utils";
  * İtemSatış profil sayfalarından sayısal UserId'yi bulur.
  */
 async function resolveUserId(url: string): Promise<string | null> {
-  // 1. URL'den bulmaya çalış (Eski tip /profil/ID/name linkleri)
   const urlMatch = url.match(/\/profil\/(\d+)\//);
   if (urlMatch) return urlMatch[1];
 
@@ -21,13 +20,12 @@ async function resolveUserId(url: string): Promise<string | null> {
     
     const html = await response.text();
 
-    // 2. HTML içindeki patternlar (Öncelikli: btn-follow data-id)
     const patterns = [
-      /btn-follow["']\s+data-id=["'](\d+)["']/i, // Kesin çözüm (OpssGamerShop tipi)
-      /data-id=["'](\d+)["']/i,                 // Genel data-id
-      /UserId\s*[:=]\s*["']?(\d+)["']?/i,       // JS değişkeni
-      /getProfileComments\?UserId=(\d+)/i,      // API linki
-      /reportProfile\((\d+)\)/i                  // Rapor fonksiyonu
+      /btn-follow["']\s+data-id=["'](\d+)["']/i,
+      /data-id=["'](\d+)["']/i,
+      /UserId\s*[:=]\s*["']?(\d+)["']?/i,
+      /getProfileComments\?UserId=(\d+)/i,
+      /reportProfile\((\d+)\)/i
     ];
 
     for (const pattern of patterns) {
@@ -75,7 +73,7 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
   const userId = await resolveUserId(competitor.url);
 
   if (!userId) {
-    throw new Error("Mağaza ID'si (UserId) okunamadı. Lütfen tam profil linkini girin (Örn: https://www.itemsatis.com/p/OpssGamerShop)");
+    throw new Error("Mağaza ID'si (UserId) okunamadı. Lütfen tam profil linkini girin.");
   }
 
   const now = new Date();
@@ -97,33 +95,40 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
     if (!response.ok) break;
 
     const resJson = await response.json();
-    const comments = resJson.data || [];
+    const comments = resJson.data || resJson.comments || [];
 
     if (comments.length === 0) break;
 
     for (const comment of comments) {
       const dateStr = comment.Datetime ? comment.Datetime.replace(/ , /g, " ") : ""; 
       const commentDate = parseTurkishDate(dateStr);
+      
+      // Sabitlenmiş (IsFixed: 1) yorumlar genellikle en üstte yer alır ve eskidir.
+      // Eğer yorum sabitlenmiş ise tarihi eski olsa bile döngüyü kırmıyoruz.
+      const isFixed = comment.IsFixed === 1 || comment.IsFixed === "1";
 
-      if (commentDate < cutoffDate) {
+      if (!isFixed && commentDate < cutoffDate) {
         hasMore = false;
         break;
       }
 
-      totalSalesInPeriod++;
-      const advertId = comment.advertID || comment.AdvertId;
-      const title = comment.SeoTitle || "Bilinmeyen Ürün";
-      const category = comment.SeoCategoryName || "urun";
-      
-      const productKey = `${advertId}`;
-      if (!productData[productKey]) {
-        productData[productKey] = {
-          title: title.replace(/-/g, " "),
-          link: `https://www.itemsatis.com/${category}/${title}-${advertId}.html`,
-          count: 0
-        };
+      // Sadece tarih aralığındakileri say (Sabitlenmiş olanları da aralığa uyuyorsa say)
+      if (commentDate >= cutoffDate) {
+        totalSalesInPeriod++;
+        const advertId = comment.advertID || comment.AdvertId;
+        const title = comment.SeoTitle || "Bilinmeyen Ürün";
+        const category = comment.SeoCategoryName || "urun";
+        
+        const productKey = `${advertId}`;
+        if (!productData[productKey]) {
+          productData[productKey] = {
+            title: title.replace(/-/g, " "),
+            link: `https://www.itemsatis.com/${category}/${title}-${advertId}.html`,
+            count: 0
+          };
+        }
+        productData[productKey].count++;
       }
-      productData[productKey].count++;
     }
 
     page++;
