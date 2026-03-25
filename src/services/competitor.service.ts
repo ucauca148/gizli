@@ -11,6 +11,7 @@ async function resolveUserId(url: string): Promise<string | null> {
   try {
     const cleanUrl = url.split("?")[0];
     const response = await fetch(cleanUrl, {
+      cache: "no-store", // Vercel önbelleğini devre dışı bırak
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html"
@@ -64,6 +65,8 @@ export async function getCompetitors() {
 }
 
 export async function scrapeCompetitor(competitorId: string, days: number = 30) {
+  console.log(`[Scraper] Rakip ID ${competitorId} için tarama başlatıldı (${days} gün)`);
+  
   const competitor = await prisma.competitor.findUnique({ 
     where: { id: competitorId } 
   });
@@ -71,6 +74,7 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
   if (!competitor) throw new Error("Rakip bulunamadı");
 
   const userId = await resolveUserId(competitor.url);
+  console.log(`[Scraper] Çözümlenen UserId: ${userId}`);
 
   if (!userId) {
     throw new Error("Mağaza ID'si (UserId) okunamadı. Lütfen tam profil linkini girin.");
@@ -85,17 +89,23 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
   const productData: Record<string, { title: string, link: string, count: number }> = {};
 
   while (hasMore) {
+    console.log(`[Scraper] Sayfa ${page} çekiliyor...`);
     const response = await fetch(`https://www.itemsatis.com/api/getProfileComments?UserId=${userId}&PageNumber=${page}&sekme=degerlendirmeler`, {
+      cache: "no-store", // KRİTİK: Önbelleği kapat
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json"
       }
     });
 
-    if (!response.ok) break;
+    if (!response.ok) {
+        console.error(`[Scraper] Sayfa ${page} hatası: ${response.status}`);
+        break;
+    }
 
     const resJson = await response.json();
     const comments = resJson.data || resJson.comments || [];
+    console.log(`[Scraper] Sayfa ${page} üzerinden ${comments.length} yorum alındı.`);
 
     if (comments.length === 0) break;
 
@@ -103,16 +113,18 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
       const dateStr = comment.Datetime ? comment.Datetime.replace(/ , /g, " ") : ""; 
       const commentDate = parseTurkishDate(dateStr);
       
-      // Sabitlenmiş (IsFixed: 1) yorumlar genellikle en üstte yer alır ve eskidir.
-      // Eğer yorum sabitlenmiş ise tarihi eski olsa bile döngüyü kırmıyoruz.
       const isFixed = comment.IsFixed === 1 || comment.IsFixed === "1";
 
+      console.log(`[Item] Date: ${dateStr} | Parsed: ${commentDate.toISOString()} | IsFixed: ${isFixed}`);
+
+      // Eğer yorum sabitlenmiş değilse ve cutoff'tan eskiyse döngüyü kır
       if (!isFixed && commentDate < cutoffDate) {
+        console.log(`[Scraper] Cutoff tarihine (${cutoffDate.toISOString()}) ulaşıldı. Döngü kırılıyor.`);
         hasMore = false;
         break;
       }
 
-      // Sadece tarih aralığındakileri say (Sabitlenmiş olanları da aralığa uyuyorsa say)
+      // Sadece tarih aralığındakileri say
       if (commentDate >= cutoffDate) {
         totalSalesInPeriod++;
         const advertId = comment.advertID || comment.AdvertId;
@@ -132,8 +144,13 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
     }
 
     page++;
-    if (page > 30) break; 
+    if (page > 30) {
+        console.log("[Scraper] Maksimum sayfa sınırına ulaşıldı.");
+        break; 
+    }
   }
+
+  console.log(`[Scraper] Analiz tamamlandı. Toplam Satış: ${totalSalesInPeriod}`);
 
   return await prisma.competitorAnalysis.create({
     data: {
