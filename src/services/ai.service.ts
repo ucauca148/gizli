@@ -12,8 +12,15 @@ export async function analyzeCompetitorPerformance(
     return "AI Analizi yapılamadı: GEMINI_API_KEY eksik. Lütfen Vercel veya .env üzerinden anahtarınızı tanımlayın.";
   }
 
-  // Denenecek model listesi (Fallback yapısı)
-  const modelsToTry = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-pro"];
+  // Kullanıcının API anahtarına özel model listesi (2.0/2.5 desteği dahil edildi)
+  const modelsToTry = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest", 
+    "gemini-1.5-flash", 
+    "gemini-pro"
+  ];
+  
   let lastError = "";
 
   const prompt = `
@@ -29,12 +36,12 @@ export async function analyzeCompetitorPerformance(
     2. Satış trendlerine (adetlere) bakarak stratejik bir tavsiye ver.
     3. Genel pazar durumu ve rakibin agresifliği hakkında kısa bir yorum yap.
     
-    Yanıtın kısa, öz, Türkçe ve profesyonel olsun. Markdown formatında başlıklarla yaz.
+    Yanıtın Türkçe ve profesyonel olsun. Markdown formatında başlıklarla yaz.
   `;
 
   for (const modelName of modelsToTry) {
     try {
-      console.log(`[AI] ${modelName} modeli ile içerik üretiliyor...`);
+      console.log(`[AI] ${modelName} deneniyor...`);
       const model = genAI.getGenerativeModel({ model: modelName });
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -42,12 +49,13 @@ export async function analyzeCompetitorPerformance(
     } catch (error: any) {
       console.error(`[AI] ${modelName} hatası:`, error.message);
       lastError = error.message;
-      // Eğer hata 404 ise bir sonraki modeli dene, değilse (örn 401, 429) direkt dön
+      
+      // Sadece 404 (Model Bulunamadı) hatası varsa bir sonrakine geç
       if (!error.message?.includes("404")) {
         break;
       }
     }
   }
 
-  return `AI Analizi yapılamadı. Hata: ${lastError || "Modeller bulunamadı"}`;
+  return `AI Analizi yapılamadı. En son alınan hata: ${lastError || "Modeller bu anahtar için kapalı"}`;
 }
