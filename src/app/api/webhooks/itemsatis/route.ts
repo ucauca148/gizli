@@ -6,6 +6,12 @@ import { processWebhookPayload } from "@/services/webhook.service";
 // Node.js runtime'da çalışmasını açıkça belirtiyoruz. (Edge değil)
 export const dynamic = "force-dynamic";
 
+// Vercel build crawler'ı bazen API rotalarını kontrol etmek için GET atabilir.
+// "Failed to collect page data" hatasını önlemek için boş bir GET ekliyoruz.
+export async function GET() {
+  return NextResponse.json({ message: "Webhook endpoint is active. Only POST requests are accepted." });
+}
+
 export async function POST(req: NextRequest) {
   try {
     // 1. İtemSatış'a özel 2 mağaza ayrımı için URL Query Parametresi Okuma 
