@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, RefreshCw, Target, TrendingUp, AlertCircle, Loader2, ExternalLink, BrainCircuit, ChevronDown, ChevronUp } from "lucide-react"
+import { Plus, RefreshCw, Target, TrendingUp, AlertCircle, Loader2, ExternalLink, BrainCircuit, ChevronDown, ChevronUp, Trash2, Package } from "lucide-react"
 
 export default function TrendyolPage() {
   const [competitors, setCompetitors] = useState<any[]>([])
@@ -40,8 +40,16 @@ export default function TrendyolPage() {
       setName("")
       setUrl("")
       fetchCompetitors()
+    } else {
+      alert("Hata: " + data.error)
     }
     setLoading(false)
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Bu rakibi takip listesinden çıkarmak istediğine emin misin?")) return
+    await fetch(`/api/competitors/${id}`, { method: "DELETE" })
+    fetchCompetitors()
   }
 
   async function handleAnalyze(id: string) {
@@ -79,11 +87,16 @@ export default function TrendyolPage() {
         </div>
       </header>
 
+      {/* Bilgilendirme Kutusu */}
+      <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-2xl flex items-center gap-4 text-blue-400">
+        <AlertCircle className="h-5 w-5 shrink-0" />
+        <p className="text-sm font-medium">
+          İstediğin profil linkini (Örn: <span className="underline italic">https://www.itemsatis.com/p/OpssGamerShop</span>) doğrudan yapıştırabilirsin. Sistem otomatik çözer.
+        </p>
+      </div>
+
       {/* Rakip Ekleme Formu */}
       <Card className="glass-panel relative overflow-hidden border-white/10 bg-black/40">
-        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-          <Plus className="h-24 w-24 text-primary" />
-        </div>
         <CardHeader>
           <CardTitle className="text-xl flex items-center gap-2 text-white">
             <Plus className="h-5 w-5 text-primary" />
@@ -103,9 +116,9 @@ export default function TrendyolPage() {
               />
             </div>
             <div className="flex-[2] space-y-1">
-              <label className="text-[10px] uppercase font-bold text-zinc-500 px-1 italic">İtemSatış Profil URL</label>
+              <label className="text-[10px] uppercase font-bold text-zinc-500 px-1 italic">Profil URL</label>
               <Input 
-                placeholder="https://www.itemsatis.com/profil/..." 
+                placeholder="https://www.itemsatis.com/p/OpssGamerShop" 
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 className="bg-black/50 border-white/5 text-white h-12 rounded-xl focus:ring-primary/50"
@@ -142,9 +155,7 @@ export default function TrendyolPage() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-3">
                         <CardTitle className="text-2xl font-black text-white">{comp.name}</CardTitle>
-                        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold border border-primary/20">
-                          İTEMSATIŞ
-                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold border border-primary/20 uppercase tracking-tighter">İTEMSATIŞ</span>
                       </div>
                       <a href={comp.url} target="_blank" className="text-xs text-zinc-500 hover:text-primary flex items-center gap-1 transition-colors">
                         {comp.url} <ExternalLink className="h-3 w-3" />
@@ -158,20 +169,29 @@ export default function TrendyolPage() {
                         </p>
                       </div>
                       <div className="flex flex-col gap-2">
-                        <Button 
-                          onClick={() => handleAnalyze(comp.id)}
-                          disabled={analyzingId === comp.id}
-                          variant="outline"
-                          className="h-9 bg-white/5 border-white/10 text-white font-bold hover:bg-white/10 rounded-lg text-xs"
-                        >
-                          {analyzingId === comp.id ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : <><RefreshCw className="h-3.5 w-3.5 mr-2" /> 30 Günlük Tara</>}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button 
+                            onClick={() => handleAnalyze(comp.id)}
+                            disabled={analyzingId === comp.id}
+                            className="h-9 bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 rounded-lg text-xs"
+                          >
+                            {analyzingId === comp.id ? <Loader2 className="animate-spin h-3.5 w-3.5 mr-2" /> : <RefreshCw className="h-3.5 w-3.5 mr-2" />}
+                            Analizi Başlat
+                          </Button>
+                          <Button 
+                            onClick={() => handleDelete(comp.id)}
+                            variant="destructive"
+                            className="h-9 w-9 p-0 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                         <Button 
                           onClick={() => setExpandedId(isExpanded ? null : comp.id)}
                           variant="ghost" 
                           className="h-9 text-zinc-400 hover:text-white text-xs font-bold"
                         >
-                          {isExpanded ? <><ChevronUp className="h-4 w-4 mr-1" /> Gizle</> : <><ChevronDown className="h-4 w-4 mr-1" /> Detaylar</>}
+                          {isExpanded ? <><ChevronUp className="h-4 w-4 mr-1" /> Detayları Kapat</> : <><ChevronDown className="h-4 w-4 mr-1" /> Satışları Göster</>}
                         </Button>
                       </div>
                     </div>
@@ -181,18 +201,17 @@ export default function TrendyolPage() {
                 {isExpanded && (
                   <CardContent className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="grid md:grid-cols-2 gap-6 border-t border-white/5 pt-6">
-                      {/* Ürün Listesi */}
                       <div className="space-y-4">
                         <h4 className="text-sm font-bold text-zinc-400 flex items-center gap-2">
                           <Package className="h-4 w-4 text-primary" />
-                          En Çok Satan İlanlar
+                          Popüler Ürünler (Son 30 Gün)
                         </h4>
-                        <div className="rounded-xl border border-white/5 overflow-hidden bg-black/20">
+                        <div className="rounded-xl border border-white/5 overflow-hidden bg-black/20 max-h-[400px] overflow-y-auto custom-scrollbar">
                           <Table>
-                            <TableHeader className="bg-white/5">
+                            <TableHeader className="bg-white/5 sticky top-0 z-10">
                               <TableRow className="hover:bg-transparent border-white/5">
-                                <TableHead className="text-[11px] font-bold text-zinc-500">İlan Adı</TableHead>
-                                <TableHead className="text-[11px] font-bold text-zinc-500 text-center">Satış</TableHead>
+                                <TableHead className="text-[11px] font-bold text-zinc-500">İlan</TableHead>
+                                <TableHead className="text-[11px] font-bold text-zinc-500 text-center">Adet</TableHead>
                                 <TableHead className="text-[11px] font-bold text-zinc-500 text-right">Git</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -201,11 +220,11 @@ export default function TrendyolPage() {
                                 Object.entries(productMap)
                                   .sort(([, a], [, b]) => b.count - a.count)
                                   .map(([key, p]) => (
-                                    <TableRow key={key} className="border-white/5 hover:bg-white/5">
-                                      <TableCell className="text-xs font-medium text-zinc-300 max-w-[200px] truncate">{p.title}</TableCell>
-                                      <TableCell className="text-center font-bold text-emerald-400 text-sm">{p.count}</TableCell>
+                                    <TableRow key={key} className="border-white/5 hover:bg-white/5 group">
+                                      <TableCell className="text-xs font-medium text-zinc-300 max-w-[200px] truncate group-hover:text-white">{p.title}</TableCell>
+                                      <TableCell className="text-center font-bold text-emerald-400 text-sm group-hover:scale-110 transition-transform">{p.count}</TableCell>
                                       <TableCell className="text-right">
-                                        <a href={p.link} target="_blank" className="text-primary hover:text-white transition-colors">
+                                        <a href={p.link} target="_blank" className="text-zinc-500 hover:text-primary transition-colors">
                                           <ExternalLink className="h-4 w-4" />
                                         </a>
                                       </TableCell>
@@ -213,7 +232,7 @@ export default function TrendyolPage() {
                                   ))
                               ) : (
                                 <TableRow>
-                                  <TableCell colSpan={3} className="text-center py-6 text-zinc-600 italic text-xs">Veri yok</TableCell>
+                                  <TableCell colSpan={3} className="text-center py-10 text-zinc-600 italic text-xs">Veri çekilmedi.</TableCell>
                                 </TableRow>
                               )}
                             </TableBody>
@@ -221,37 +240,39 @@ export default function TrendyolPage() {
                         </div>
                       </div>
 
-                      {/* AI Analizi */}
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <h4 className="text-sm font-bold text-zinc-400 flex items-center gap-2">
                             <BrainCircuit className="h-4 w-4 text-primary" />
-                            Gemini AI Strateji Raporu
+                            AI Strateji Raporu (Gemini)
                           </h4>
                           <Button 
                             onClick={() => handleAIAnalysis(comp.id)}
                             disabled={aiLoadingId === comp.id || !lastAnalysis}
-                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold h-8 px-4 rounded-lg text-[10px] shadow-lg shadow-purple-900/20"
+                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold h-8 px-4 rounded-lg text-[10px] shadow-lg shadow-purple-900/20 active:scale-95 transition-all"
                           >
-                            {aiLoadingId === comp.id ? <Loader2 className="animate-spin h-3.5 w-3.5 mr-2" /> : <RefreshCw className="h-3.5 w-3.5 mr-2" />}
-                            AI ANALİZİ OLUŞTUR
+                            {aiLoadingId === comp.id ? <Loader2 className="animate-spin h-3.5 w-3.5 mr-2" /> : <BrainCircuit className="h-3.5 w-3.5 mr-2" />}
+                            RAPOR OLUŞTUR
                           </Button>
                         </div>
-                        <div className="min-h-[200px] bg-zinc-950/50 border border-white/5 rounded-2xl p-6 text-sm text-zinc-300 leading-relaxed italic relative overflow-hidden">
+                        <div className="min-h-[250px] bg-zinc-950/50 border border-white/5 rounded-3xl p-6 text-sm text-zinc-300 leading-relaxed relative overflow-hidden group">
                           {aiInsights[comp.id] ? (
-                            <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap">
+                            <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap animate-in fade-in duration-500">
                               {aiInsights[comp.id]}
                             </div>
                           ) : (
-                            <div className="flex flex-col items-center justify-center h-full gap-3 opacity-30">
-                              <BrainCircuit className="h-10 w-10" />
-                              <p className="text-xs text-center">Analiz verisini topladıktan sonra Gemini\'nin bu rakip hakkındaki yorumlarını buraya dökebiliriz.</p>
+                            <div className="flex flex-col items-center justify-center h-full gap-4 opacity-20 group-hover:opacity-30 transition-opacity">
+                              <BrainCircuit className="h-12 w-12" />
+                              <p className="text-xs text-center max-w-[200px]">Rakiplerin hamlelerini analiz etmek için "Rapor Oluştur" butonuna bas.</p>
                             </div>
                           )}
                           {!aiInsights[comp.id] && aiLoadingId === comp.id && (
-                            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center gap-3">
-                              <Loader2 className="animate-spin h-6 w-6 text-primary" />
-                              <span className="font-bold text-primary animate-pulse">Gemini Düşünüyor...</span>
+                            <div className="absolute inset-0 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center gap-4">
+                              <div className="relative">
+                                <Loader2 className="animate-spin h-10 w-10 text-primary" />
+                                <BrainCircuit className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 text-white animate-pulse" />
+                              </div>
+                              <span className="font-bold text-primary animate-pulse tracking-widest text-xs uppercase">Gemini Analiz Ediyor...</span>
                             </div>
                           )}
                         </div>
@@ -265,16 +286,14 @@ export default function TrendyolPage() {
         )}
       </div>
 
-      {/* Alt Bilgi */}
-      <div className="bg-zinc-900/40 border border-white/5 p-6 rounded-3xl flex items-center gap-5">
-        <div className="h-12 w-12 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30">
+      <div className="bg-primary/5 border border-primary/10 p-6 rounded-3xl flex items-center gap-5">
+        <div className="h-12 w-12 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30 shrink-0">
           <AlertCircle className="h-6 w-6 text-primary" />
         </div>
         <div>
-          <h4 className="text-white font-bold text-lg">Pazar Hakimiyeti Planı</h4>
+          <h4 className="text-white font-bold text-lg">Neden Gemini?</h4>
           <p className="text-sm text-zinc-500 max-w-2xl mt-1 leading-relaxed">
-            Bu modül, rakiplerinizin hangi ürünlerle öne geçtiğini ve müşteri talebinin hangi yöne kaydığını saptamanız için tasarlandı. 
-            **Gemini 1.5 Flash** altyapısı ile pazar verilerini kullanarak size stratejik bir "Yol Haritası" sunar.
+            Gemini 1.5 Flash piyasadaki en hızlı ve en güncel verileri işleyen modellerden biridir. Rakiplerin son 30 günlük satış modellerini analiz ederek size nokta atışı pazarlama tavsiyeleri sunar.
           </p>
         </div>
       </div>
