@@ -86,7 +86,7 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
   const productData: Record<string, { title: string, link: string, count: number }> = {};
 
   while (hasMore) {
-    // KRİTİK: siralama=yeni eklendi, böylece sabitlenmiş yorumlar Page 1'i tıkamıyor.
+    // KRİTİK: siralama=yeni parametresi her zaman eklenmeli
     const apiUrl = `https://www.itemsatis.com/api/getProfileComments?UserId=${userId}&PageNumber=${page}&sekme=degerlendirmeler&siralama=yeni`;
     
     const response = await fetch(apiUrl, {
@@ -136,7 +136,8 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
     }
 
     page++;
-    if (page > 30) break; 
+    // Page limit 100'e çıkarıldı (Büyük mağazalar için)
+    if (page > 100) break; 
   }
 
   return await prisma.competitorAnalysis.create({
