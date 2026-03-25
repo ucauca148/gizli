@@ -2,30 +2,32 @@ import { prisma } from "@/lib/prisma";
 import { parseTurkishDate } from "@/lib/date-utils";
 
 /**
- * URL'den veya HTML kaynağından sayısal UserId'yi bulur.
+ * İtemSatış profil sayfalarından sayısal UserId'yi bulur.
  */
 async function resolveUserId(url: string): Promise<string | null> {
-  // 1. Önce URL'den bulmaya çalış (Eski tip linkler: /profil/12345/isim)
+  // 1. URL'den bulmaya çalış (Eski tip /profil/ID/name linkleri)
   const urlMatch = url.match(/\/profil\/(\d+)\//);
   if (urlMatch) return urlMatch[1];
 
-  // 2. Eğer /p/KullaniciAdi şeklindeyse sayfayı çekip içinden bul
   try {
-    const response = await fetch(url.split("?")[0], { // Query parametrelerini temizle
+    const cleanUrl = url.split("?")[0];
+    const response = await fetch(cleanUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html"
       }
     });
+    if (!response.ok) return null;
+    
     const html = await response.text();
 
-    // Farklı patternları tek tek dene
+    // 2. HTML içindeki patternlar (Öncelikli: btn-follow data-id)
     const patterns = [
-      /UserId\s*[:=]\s*(\d+)/i,                 // JS değişkeni veya JSON
-      /data-user-id\s*=\s*["'](\d+)["']/i,      // HTML attribute
-      /profileUserId\s*=\s*(\d+)/i,             // Başka bir JS değişkeni
-      /getProfileComments\?UserId=(\d+)/i,      // API çağrısı içindeki ID
-      /reportProfile\((\d+)\)/i                 // Fonksiyon çağrısı içindeki ID
+      /btn-follow["']\s+data-id=["'](\d+)["']/i, // Kesin çözüm (OpssGamerShop tipi)
+      /data-id=["'](\d+)["']/i,                 // Genel data-id
+      /UserId\s*[:=]\s*["']?(\d+)["']?/i,       // JS değişkeni
+      /getProfileComments\?UserId=(\d+)/i,      // API linki
+      /reportProfile\((\d+)\)/i                  // Rapor fonksiyonu
     ];
 
     for (const pattern of patterns) {
@@ -33,7 +35,7 @@ async function resolveUserId(url: string): Promise<string | null> {
       if (match) return match[1];
     }
   } catch (e) {
-    console.error("UserId çözümlenirken hata oluştu:", e);
+    console.error("UserId çözümleme hatası:", e);
   }
 
   return null;
@@ -63,9 +65,6 @@ export async function getCompetitors() {
   });
 }
 
-/**
- * Rakip mağazanın son X günlük satışlarını (yorumlarını) sayfalama ile tarar.
- */
 export async function scrapeCompetitor(competitorId: string, days: number = 30) {
   const competitor = await prisma.competitor.findUnique({ 
     where: { id: competitorId } 
@@ -73,11 +72,10 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
   
   if (!competitor) throw new Error("Rakip bulunamadı");
 
-  // Sayısal UserId çözümleniyor...
   const userId = await resolveUserId(competitor.url);
 
   if (!userId) {
-    throw new Error("Mağaza ID'si (UserId) okunamadı. Lütfen tam profil linkini girin (Örn: https://www.itemsatis.com/p/MağazaAdı)");
+    throw new Error("Mağaza ID'si (UserId) okunamadı. Lütfen tam profil linkini girin (Örn: https://www.itemsatis.com/p/OpssGamerShop)");
   }
 
   const now = new Date();
@@ -129,7 +127,7 @@ export async function scrapeCompetitor(competitorId: string, days: number = 30) 
     }
 
     page++;
-    if (page > 30) break; // Maksimum 30 sayfa tara
+    if (page > 30) break; 
   }
 
   return await prisma.competitorAnalysis.create({
