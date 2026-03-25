@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scrapeCompetitor, prisma } from "@/services/competitor.service";
+import { scrapeCompetitor } from "@/services/competitor.service";
 
 export const dynamic = "force-dynamic";
 
