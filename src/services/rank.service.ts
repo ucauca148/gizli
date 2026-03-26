@@ -71,126 +71,113 @@ export async function findMyRanks(
     console.error("[RankService] Profile fetch error:", e.message);
   }
 
-  // 2. Fetch Category Page to get CSRF and CatID
-  let csrf = "";
-  let catId = "";
-  try {
-    const res = await fetch(normalizedCategory, { headers: HEADERS });
-    if (res.ok) {
-       const html = await res.text();
-       csrf = html.match(/csrf-token['"]\s+content=["']([^"']+)/)?.[1] || "";
-       catId = html.match(/cat:(\d+)/)?.[1] || "";
-    }
-  } catch (e) {}
-
+  // 2. Fetch Category Pages via simple GET requests and parse `.advert-data`
   let marketCheapest = Infinity;
   let totalListingsScanned = 0;
 
-  if (csrf && catId) {
-    // 3. Get Absolute Market Cheapest (Buybox)
-    try {
-       const buyboxRes = await fetch("https://www.itemsatis.com/index2.php?go=GetPosts", {
-          method: "POST",
-          headers: { ...HEADERS, "X-CSRF-TOKEN": csrf, "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest", "Referer": normalizedCategory },
-          body: `cat_id=${catId}&page=1&say=20&siralama=en-dusuk-fiyat`
-       });
-       if (buyboxRes.ok) {
-          const buyboxHtml = await buyboxRes.text();
-          const pMatch = buyboxHtml.match(/([\d.,]+)\s*(?:₺|TL)/i);
-          if (pMatch) {
-             marketCheapest = parseFloat(pMatch[1].replace(/\./g, "").replace(",", "."));
-          }
-       }
-    } catch(e) {}
-
-    // 4. Scan for Organic Ranks based on user's sorting pref (default: varsayılan)
-    const activeSort = siralama !== "Varsayılan" ? siralama : "en-yeni"; // Default to newest if none specified
-    let currentRank = 1;
-
-    for (let page = 1; page <= maxPages; page++) {
-       try {
-           const apiRes = await fetch("https://www.itemsatis.com/index2.php?go=GetPosts", {
-              method: "POST",
-              headers: { ...HEADERS, "X-CSRF-TOKEN": csrf, "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest", "Referer": normalizedCategory },
-              body: `cat_id=${catId}&page=${page}&say=20&siralama=${activeSort}`
-           });
-           
-           if (!apiRes.ok) break;
-           const chunkHtml = await apiRes.text();
-           const chunkRoot = parse(chunkHtml);
-           
-           // Extract links
-           const links = Array.from(chunkRoot.querySelectorAll("a[href]")).filter(a => {
-              const h = a.getAttribute("href") || "";
-              return h.includes(categoryPrefix) && h.match(/\-\d{4,8}\.html$/) && !h.includes('/profil/');
-           });
-
-           // Deduplicate links in this chunk
-           const uniqueLinks = new Map();
-           for(const l of links) {
-              uniqueLinks.set(l.getAttribute("href"), l);
+  // We loop for maxPages pages on the given sort param. 
+  // Wait, to guarantee getting absolute marketCheapest, we MUST query `siralama=en-dusuk-fiyat` page 1 at least once.
+  try {
+     const buyboxUrl = `https://www.itemsatis.com/ilanlar/${categorySlug}.html?siralama=en-dusuk-fiyat&page=1`;
+     const buyboxRes = await fetch(buyboxUrl, { headers: HEADERS });
+     if (buyboxRes.ok) {
+        const buyboxHtml = await buyboxRes.text();
+        const root = parse(buyboxHtml);
+        const advertContainer = root.querySelector('.advert-data');
+        if (advertContainer) {
+           const firstItem = advertContainer.querySelector('a[href]');
+           if (firstItem) {
+              const outerHTML = firstItem.parentNode?.parentNode?.outerHTML || firstItem.outerHTML;
+              const pMatch = outerHTML.match(/([\d.,]+)\s*(?:₺|TL)/i) || outerHTML.match(/og:price:amount"[^>]+content="([\d.,]+)"/i);
+              if (pMatch) {
+                 marketCheapest = parseFloat(pMatch[1].replace(/\./g, "").replace(",", "."));
+              }
            }
+        }
+     }
+  } catch(e) {}
 
-           if (uniqueLinks.size === 0) break; // Reached end of category
+  // 3. Scan for Organic Ranks based on user's sorting pref
+  const activeSort = siralama !== "Varsayılan" ? siralama : "en-yeni";
+  let currentRank = 1;
 
-           for (const [href, linkNode] of Array.from(uniqueLinks.entries())) {
-              let container = linkNode;
-              for(let i=0; i<4; i++) {
-                 if (container.getAttribute('class')?.includes('col') || container.getAttribute('class')?.includes('card')) break;
-                 if (container.parentNode) container = container.parentNode;
-              }
+  for (let page = 1; page <= maxPages; page++) {
+     try {
+         const pageUrl = `https://www.itemsatis.com/ilanlar/${categorySlug}.html?siralama=${activeSort}&page=${page}`;
+         const apiRes = await fetch(pageUrl, { headers: HEADERS });
+         
+         if (!apiRes.ok) break;
+         const html = await apiRes.text();
+         const root = parse(html);
+         
+         const advertContainer = root.querySelector('.advert-data');
+         if (!advertContainer) break; // Finished category?
 
-              const outerHTML = container.outerHTML || linkNode.outerHTML;
-              
-              let price = 0;
-              const pMatch = outerHTML.match(/([\d.,]+)\s*(?:₺|TL)/i);
-              if (pMatch) price = parseFloat(pMatch[1].replace(/\./g, "").replace(",", "."));
+         const links = Array.from(advertContainer.querySelectorAll("a[href]")).filter(a => {
+            const h = a.getAttribute("href") || "";
+            return h.includes(categoryPrefix) && h.match(/\-\d{4,8}\.html$/) && !h.includes('/profil/');
+         });
 
-              let seller = "";
-              const sellerNode = container.querySelector("a[href*='/profil/']");
-              if (sellerNode) {
-                 seller = sellerNode.getAttribute("href")?.split('/profil/')[1]?.replace('.html', '') || "";
-              } else if (outerHTML.toLowerCase().includes(myStoreName.toLowerCase())) {
-                 seller = myStoreName.toLowerCase();
-              }
+         const uniqueLinks = new Map();
+         for(const l of links) {
+            uniqueLinks.set(l.getAttribute("href"), l);
+         }
 
-              // Update market cheapest just in case
-              if (price > 0 && price < marketCheapest) marketCheapest = price;
+         if (uniqueLinks.size === 0) break; // Reached end of category
 
-              // If this is my listing, update its rank and exact title/price
-              if (seller.toLowerCase() === myStoreName.toLowerCase()) {
-                 const title = linkNode.getAttribute("title") || linkNode.innerText.trim();
-                 let existing = myListings.find(m => href.includes(m.url.split('/').pop()!));
-                 if (existing) {
-                    existing.rank = currentRank;
-                    existing.price = price;
-                    existing.title = title || existing.title;
-                 } else {
-                    myListings.push({
-                       title: title || href.split('/').pop() || '',
-                       url: `https://www.itemsatis.com${href}`,
-                       price,
-                       category: categoryPrefix,
-                       rank: currentRank
-                    });
-                 }
-              }
+         for (const [href, linkNode] of Array.from(uniqueLinks.entries())) {
+            let container = linkNode;
+            for(let i=0; i<5; i++) {
+               if (container.getAttribute('class')?.includes('col') || container.getAttribute('class')?.includes('card')) break;
+               if (container.parentNode) container = container.parentNode as any;
+            }
 
-              currentRank++;
-              totalListingsScanned++;
-           }
-       } catch(e) {
-           break;
-       }
-    }
+            const outerHTML = container.outerHTML || linkNode.outerHTML;
+            
+            let price = 0;
+            const pMatch = outerHTML.match(/([\d.,]+)\s*(?:₺|TL)/i) || outerHTML.match(/og:price:amount"[^>]+content="([\d.,]+)"/i);
+            if (pMatch) price = parseFloat(pMatch[1].replace(/\./g, "").replace(",", "."));
+
+            let seller = "";
+            const sellerNode = container.querySelector("a[href*='/profil/']");
+            if (sellerNode) {
+               seller = sellerNode.getAttribute("href")?.split('/profil/')[1]?.replace('.html', '') || "";
+            } else if (outerHTML.toLowerCase().includes(myStoreName.toLowerCase())) {
+               seller = myStoreName.toLowerCase();
+            }
+
+            if (price > 0 && price < marketCheapest) marketCheapest = price;
+
+            if (seller.toLowerCase() === myStoreName.toLowerCase()) {
+               const title = linkNode.getAttribute("title") || linkNode.innerText.trim();
+               let existing = myListings.find(m => href.includes(m.url.split('/').pop()!));
+               if (existing) {
+                  existing.rank = currentRank;
+                  existing.price = price;
+                  existing.title = title || existing.title;
+               } else {
+                  myListings.push({
+                     title: title || href.split('/').pop() || '',
+                     url: `https://www.itemsatis.com${href}`,
+                     price,
+                     category: categoryPrefix,
+                     rank: currentRank
+                  });
+               }
+            }
+
+            currentRank++;
+            totalListingsScanned++;
+         }
+     } catch(e) {
+         break;
+     }
   }
 
-  // 5. Fill missing prices for profile items that were not found in the scanned pages
+  // 4. Fill missing prices for profile items
   for (const item of myListings) {
      if (item.price === 0) {
          try {
-             // In a perfect system we could run a background queue for this.
-             // We'll do a quick fetch to get its price.
              const res = await fetch(item.url, { headers: HEADERS });
              if (res.ok) {
                  const html = await res.text();
