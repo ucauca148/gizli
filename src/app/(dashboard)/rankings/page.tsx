@@ -140,54 +140,59 @@ export default function RankingsPage() {
                 <CardContent className="pt-0 space-y-4">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Tespit Edilen İlanın</p>
-                      <p className="text-2xl font-black text-primary">{result.myRankings.length}</p>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Bulunan İlan</p>
+                      <p className="text-2xl font-black text-primary">{result.myListings?.length ?? 0}</p>
                     </div>
                     <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase">En İyi Sıran</p>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase">En Ucuz İlanın</p>
                       <p className="text-2xl font-black text-emerald-400">
-                        {result.myRankings.length > 0 ? `#${Math.min(...result.myRankings.map((r: any) => r.rank))}` : "-"}
+                        {result.myListings?.length > 0 
+                          ? `${Math.min(...result.myListings.map((r: any) => r.price || 0).filter((p: number) => p > 0))} ₺`
+                          : "-"}
                       </p>
                     </div>
                     <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Pazar En Ucuz</p>
-                      <p className="text-2xl font-black text-yellow-500">{result.marketCheapest} ₺</p>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase">İlan Sayısı</p>
+                      <p className="text-2xl font-black text-yellow-500">{result.totalListings ?? 0}</p>
                     </div>
                     <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Taranan Sayfa</p>
-                      <p className="text-2xl font-black text-zinc-400">{result.totalPagesScanned}</p>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Pazar En Ucuz</p>
+                      <p className="text-2xl font-black text-zinc-400">{result.marketCheapest ?? 0} ₺</p>
                     </div>
                   </div>
 
-                  {result.myRankings.length > 0 && (
+                  {result.myListings?.length > 0 && (
                     <div className="rounded-xl border border-white/5 overflow-hidden">
                       <Table>
                         <TableHeader className="bg-white/5">
                           <TableRow className="border-white/5">
                             <TableHead className="text-xs text-zinc-500">İlan Başlığı</TableHead>
                             <TableHead className="text-xs text-zinc-500 text-center">Fiyat</TableHead>
-                            <TableHead className="text-xs text-zinc-500 text-center">Sıra</TableHead>
+                            <TableHead className="text-xs text-zinc-500 text-center">Kategori</TableHead>
                             <TableHead className="text-xs text-zinc-500 text-right">Durum</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {result.myRankings.map((rk: any, idx: number) => {
-                            const isCheapest = rk.price <= result.marketCheapest;
-                            const isLowRank = rk.rank > 20;
+                          {result.myListings.map((rk: any, idx: number) => {
+                            const marketMin = result.marketCheapest ?? 0;
+                            const isCheapest = rk.price > 0 && rk.price <= marketMin;
+                            const isNoPriceFound = !rk.price || rk.price === 0;
 
                             return (
                               <TableRow key={idx} className="border-white/5 hover:bg-white/5">
-                                <TableCell className="text-xs font-medium text-zinc-300">{rk.title}</TableCell>
-                                <TableCell className="text-center font-bold text-white">{rk.price} ₺</TableCell>
-                                <TableCell className="text-center">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rk.rank <= 10 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
-                                    #{rk.rank}
-                                  </span>
+                                <TableCell className="text-xs font-medium text-zinc-300 max-w-[260px] truncate">
+                                  <a href={rk.url} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">
+                                    {rk.title}
+                                  </a>
                                 </TableCell>
+                                <TableCell className="text-center font-bold text-white">
+                                  {isNoPriceFound ? <span className="text-zinc-500 text-xs">Alınamadı</span> : `${rk.price} ₺`}
+                                </TableCell>
+                                <TableCell className="text-center text-xs text-zinc-400">{rk.category}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex items-center justify-end gap-2">
-                                    {!isCheapest && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
-                                    {isLowRank && <TrendingDown className="h-4 w-4 text-red-500" />}
+                                    {isNoPriceFound && <AlertTriangle className="h-4 w-4 text-zinc-500" />}
+                                    {!isNoPriceFound && !isCheapest && <TrendingDown className="h-4 w-4 text-yellow-500" />}
                                     {isCheapest && <Star className="h-4 w-4 text-emerald-500" />}
                                   </div>
                                 </TableCell>
