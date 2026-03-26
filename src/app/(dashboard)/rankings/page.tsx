@@ -144,15 +144,16 @@ export default function RankingsPage() {
                       <p className="text-2xl font-black text-primary">{result.myListings?.length ?? 0}</p>
                     </div>
                     <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase">En Ucuz İlanın</p>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase">En İyi Sıran</p>
                       <p className="text-2xl font-black text-emerald-400">
-                        {result.myListings?.length > 0 
-                          ? `${Math.min(...result.myListings.map((r: any) => r.price || 0).filter((p: number) => p > 0))} ₺`
-                          : "-"}
+                        {(() => {
+                          const ranked = result.myListings?.filter((r: any) => r.rank > 0) || [];
+                          return ranked.length > 0 ? `#${Math.min(...ranked.map((r: any) => r.rank))}` : "-";
+                        })()}
                       </p>
                     </div>
                     <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase">İlan Sayısı</p>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Taranan İlan</p>
                       <p className="text-2xl font-black text-yellow-500">{result.totalListings ?? 0}</p>
                     </div>
                     <div className="bg-black/20 p-4 rounded-xl border border-white/5">
@@ -168,6 +169,7 @@ export default function RankingsPage() {
                           <TableRow className="border-white/5">
                             <TableHead className="text-xs text-zinc-500">İlan Başlığı</TableHead>
                             <TableHead className="text-xs text-zinc-500 text-center">Fiyat</TableHead>
+                            <TableHead className="text-xs text-zinc-500 text-center">Sıra</TableHead>
                             <TableHead className="text-xs text-zinc-500 text-center">Kategori</TableHead>
                             <TableHead className="text-xs text-zinc-500 text-right">Durum</TableHead>
                           </TableRow>
@@ -187,6 +189,11 @@ export default function RankingsPage() {
                                 </TableCell>
                                 <TableCell className="text-center font-bold text-white">
                                   {isNoPriceFound ? <span className="text-zinc-500 text-xs">Alınamadı</span> : `${rk.price} ₺`}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rk.rank > 0 && rk.rank <= 5 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
+                                    {rk.rank > 0 ? `#${rk.rank}` : "-"}
+                                  </span>
                                 </TableCell>
                                 <TableCell className="text-center text-xs text-zinc-400">{rk.category}</TableCell>
                                 <TableCell className="text-right">
@@ -214,8 +221,8 @@ export default function RankingsPage() {
       <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex items-start gap-3">
         <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
         <p className="text-xs text-zinc-400 leading-relaxed">
-          <strong>İpucu:</strong> Eğer ilanınız ilk 3 sayfada bulunamadıysa "Düşük Sıralama" olarak işaretlenir. 
-          Sıralamanızı artırmak için ilanınızı öne çıkarabilir veya fiyatınızı piyasanın <strong>en ucuz fiyatına</strong> ({Object.values(analysisResults)[0]?.marketCheapest || "..."} ₺) yaklaştırabilirsiniz.
+          <strong>İpucu:</strong> Tüm kategori taranarak <strong>gerçek sıranız</strong> hesaplanmaktadır. Eğer sıra kısmında "-" görüyorsanız ilanınız organik aramalarda taranan sayfalarda çıkmamıştır (sadece profilinizden bulunmuştur).
+          Sıralamanızı artırmak için ilanınızı öne çıkarabilir veya fiyatınızı piyasanın <strong>en ucuz fiyatına</strong> yaklaştırabilirsiniz.
         </p>
       </div>
     </div>
