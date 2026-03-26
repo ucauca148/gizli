@@ -1,6 +1,6 @@
 import { ReactNode } from "react"
 import Link from "next/link"
-import { LayoutDashboard, ShoppingCart, Package, Webhook, Brain, StickyNote, Settings, LogOut, TrendingUp } from "lucide-react"
+import { LayoutDashboard, ShoppingCart, Package, Webhook, Brain, StickyNote, Settings, LogOut, TrendingUp, Search } from "lucide-react"
 import { createClient } from "@/lib/supabase-server"
 import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -84,6 +84,7 @@ function SidebarNav() {
     { href: '/', icon: LayoutDashboard, label: 'Kapsamlı Özet' },
     { href: '/orders', icon: ShoppingCart, label: 'Siparişler' },
     { href: '/trendyol', icon: TrendingUp, label: 'Trendyol (Rakip)', highlight: true },
+    { href: '/rankings', icon: Search, label: 'İlan Sıralama', highlight: true },
     { href: '/products', icon: Package, label: 'Ürün Kapsamı' },
     { href: '/webhooks', icon: Webhook, label: 'Canlı Loglar' },
     { href: '/ai-insights', icon: Brain, label: 'Yapay Zeka', highlight: true },

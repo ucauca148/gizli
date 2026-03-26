@@ -133,3 +133,13 @@ model CompetitorAnalysis {
   @@index([competitorId])
   @@map("competitor_analyses")
 }
+
+model RankTracker {
+  id            String   @id @default(uuid()) @db.Uuid
+  categoryUrl   String   // Örn: itemsatis.com/valorant-hesap-satisi
+  myStoreUserId String   // Kullanıcının kendi İtemSatış ID'si
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("rank_trackers")
+}
