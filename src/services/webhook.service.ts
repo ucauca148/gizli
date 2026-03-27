@@ -28,11 +28,24 @@ export async function processWebhookPayload(eventId: string) {
       return;
     }
 
-    // Esnek Event Tipi Belirleme (İtemSatış şeması 'event' kullanabiliyor)
-    const eventType = payload.event || payload.event_type || payload.type || payload.action || "UNKNOWN";
+    // Esnek Event Tipi Belirleme (İtemSatış bazen details.event içinde gönderir)
+    const eventType = String(
+      payload.event ||
+        payload.event_type ||
+        payload.type ||
+        payload.action ||
+        payload.details?.event ||
+        "UNKNOWN"
+    ).toLowerCase();
     
     // Geçici "UNMAPPED" akışı: Bilinen eventler listesinde yoksa güvenle logla, hata fırlatma
-    const knownEvents = ["order.created", "order.approved", "order.cancelled", "product.out_of_stock"];
+    const knownEvents = [
+      "order.created",
+      "order.approved",
+      "order.cancelled",
+      "product.out_of_stock",
+      "advert_sold",
+    ];
     
     if (!knownEvents.includes(eventType)) {
       await prisma.webhookEvent.update({
@@ -40,6 +53,19 @@ export async function processWebhookPayload(eventId: string) {
         data: {
           eventType,
           status: "UNMAPPED", // İstek başarıyla loglandı, ancak sistem şimdilik bu event tipini işlemiyor.
+          processedAt: new Date(),
+        },
+      });
+      return;
+    }
+
+    // advert_sold payload'ı sipariş şemasında olmayabilir; logu işlenmiş sayıp çık.
+    if (eventType === "advert_sold") {
+      await prisma.webhookEvent.update({
+        where: { id: eventId },
+        data: {
+          eventType,
+          status: "PROCESSED",
           processedAt: new Date(),
         },
       });

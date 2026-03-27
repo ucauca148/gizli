@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Search, TrendingDown, AlertTriangle, Loader2, Trash2, RefreshCw, Star, Info, ChevronDown, ChevronRight } from "lucide-react"
+import { Plus, Search, TrendingDown, AlertTriangle, Loader2, Trash2, RefreshCw, Star, Info, ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
 
 type Tracker = {
   id: string
@@ -24,14 +24,12 @@ type Listing = {
 type AnalysisResult = {
   myListings: Listing[]
   marketCheapest: number
+  marketCheapestUrl?: string
   totalListings: number
   error?: string
 }
 
-type CheckStatus = "idle" | "checked" | "error"
-
 type TrackerMeta = {
-  status: CheckStatus
   lastCheckedAt?: number
   error?: string
 }
@@ -53,14 +51,56 @@ function getBestRank(result?: AnalysisResult) {
   return ranked.length > 0 ? Math.min(...ranked.map((r) => r.rank || 0)) : null
 }
 
-function statusBadge(meta?: TrackerMeta) {
-  if (!meta || meta.status === "idle") {
-    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-500/20 text-zinc-400">Kontrol edilmedi</span>
+function getRankBadge(rank: number | null) {
+  if (!rank) {
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-500/20 text-zinc-400">-</span>
   }
-  if (meta.status === "error") {
-    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400">Hata</span>
+  if (rank === 1) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
+        <Star className="h-3 w-3" /> #1
+      </span>
+    )
   }
-  return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">Kontrol edildi</span>
+  if (rank <= 5) {
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">#{rank}</span>
+  }
+  if (rank <= 10) {
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/20 text-orange-300">#{rank}</span>
+  }
+  if (rank <= 49) {
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-500/20 text-yellow-300">#{rank}</span>
+  }
+  if (rank <= 100) {
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300">#{rank}</span>
+  }
+  return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-700/20 text-red-200">#{rank}</span>
+}
+
+function getAiSuggestion(result?: AnalysisResult) {
+  if (!result) {
+    return { label: "Analiz yok", tone: "bg-zinc-500/20 text-zinc-400" }
+  }
+  const bestRank = getBestRank(result)
+  const myBestPrice =
+    result.myListings
+      .filter((x) => x.price > 0)
+      .map((x) => x.price)
+      .sort((a, b) => a - b)[0] ?? 0
+
+  if (!bestRank) {
+    return { label: "AI: Vitrin test et", tone: "bg-red-500/20 text-red-300" }
+  }
+  if (bestRank <= 5 && myBestPrice > 0 && myBestPrice <= result.marketCheapest) {
+    return { label: "AI: Vitrin gereksiz", tone: "bg-emerald-500/20 text-emerald-300" }
+  }
+  if (bestRank <= 10) {
+    return { label: "AI: Hafif vitrin", tone: "bg-orange-500/20 text-orange-300" }
+  }
+  if (bestRank <= 50) {
+    return { label: "AI: Fiyat + vitrin", tone: "bg-yellow-500/20 text-yellow-300" }
+  }
+  return { label: "AI: Vitrin şart", tone: "bg-red-500/20 text-red-300" }
 }
 
 export default function RankingsPage() {
@@ -120,7 +160,6 @@ export default function RankingsPage() {
       setTrackerMeta((prev) => ({
         ...prev,
         [id]: {
-          status: "checked",
           lastCheckedAt: Date.now(),
         },
       }))
@@ -128,7 +167,6 @@ export default function RankingsPage() {
       setTrackerMeta((prev) => ({
         ...prev,
         [id]: {
-          status: "error",
           error: data.error,
           lastCheckedAt: Date.now(),
         },
@@ -336,7 +374,7 @@ export default function RankingsPage() {
                   <TableHead className="text-center" title="Taranan organik ilan adedi">Taranan</TableHead>
                   <TableHead className="text-center">En İyi Sıra</TableHead>
                   <TableHead className="text-center">Pazar En Ucuz</TableHead>
-                  <TableHead className="text-center">Durum</TableHead>
+                  <TableHead className="text-center">AI Öneri</TableHead>
                   <TableHead className="text-right">Aksiyonlar</TableHead>
                 </TableRow>
               </TableHeader>
@@ -348,6 +386,7 @@ export default function RankingsPage() {
                   const checkedAt = trackerMeta[tracker.id]?.lastCheckedAt
                   const isOpen = !!expandedIds[tracker.id]
                   const isChecking = !!checkingIds[tracker.id]
+                  const aiSuggestion = getAiSuggestion(result)
 
                   return (
                     <Fragment key={tracker.id}>
@@ -383,17 +422,32 @@ export default function RankingsPage() {
                         <TableCell className="text-center text-xs text-primary">{foundCount}</TableCell>
                         <TableCell className="text-center text-xs text-yellow-400">{result?.totalListings ?? "-"}</TableCell>
                         <TableCell className="text-center text-xs font-bold">
-                          {bestRank ? (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">#{bestRank}</span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-zinc-500/20 text-zinc-400">-</span>
-                          )}
+                          {getRankBadge(bestRank)}
                         </TableCell>
                         <TableCell className="text-center text-xs text-zinc-300">
-                          {result ? `${result.marketCheapest ?? 0} ₺` : "-"}
+                          {result ? (
+                            <div className="inline-flex items-center gap-2">
+                              <span>{result.marketCheapest ?? 0} ₺</span>
+                              {result.marketCheapestUrl && (
+                                <a
+                                  href={result.marketCheapestUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-primary hover:text-primary/80"
+                                  title="En ucuz ilana git"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </a>
+                              )}
+                            </div>
+                          ) : (
+                            "-"
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
-                          <div title={trackerMeta[tracker.id]?.error}>{statusBadge(trackerMeta[tracker.id])}</div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${aiSuggestion.tone}`}>
+                            {aiSuggestion.label}
+                          </span>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -433,7 +487,7 @@ export default function RankingsPage() {
                                   </div>
                                   <div className="bg-black/30 p-3 rounded-lg border border-white/5">
                                     <p className="text-[10px] font-bold text-zinc-500 uppercase">En İyi Sıra</p>
-                                    <p className="text-xl font-black text-emerald-400">{bestRank ? `#${bestRank}` : "-"}</p>
+                                    <div className="mt-1">{getRankBadge(bestRank)}</div>
                                   </div>
                                   <div className="bg-black/30 p-3 rounded-lg border border-white/5">
                                     <p className="text-[10px] font-bold text-zinc-500 uppercase">Taranan İlan</p>
@@ -441,7 +495,20 @@ export default function RankingsPage() {
                                   </div>
                                   <div className="bg-black/30 p-3 rounded-lg border border-white/5">
                                     <p className="text-[10px] font-bold text-zinc-500 uppercase">Pazar En Ucuz</p>
-                                    <p className="text-xl font-black text-zinc-300">{result.marketCheapest ?? 0} ₺</p>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-xl font-black text-zinc-300">{result.marketCheapest ?? 0} ₺</p>
+                                      {result.marketCheapestUrl && (
+                                        <a
+                                          href={result.marketCheapestUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-primary hover:text-primary/80"
+                                          title="En ucuz ilana git"
+                                        >
+                                          <ExternalLink className="h-4 w-4" />
+                                        </a>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
 
@@ -472,9 +539,7 @@ export default function RankingsPage() {
                                                 {isNoPriceFound ? <span className="text-zinc-500">Alınamadı</span> : `${rk.price} ₺`}
                                               </TableCell>
                                               <TableCell className="text-center">
-                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rk.rank && rk.rank > 0 && rk.rank <= 5 ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-500/20 text-zinc-400"}`}>
-                                                  {rk.rank && rk.rank > 0 ? `#${rk.rank}` : "-"}
-                                                </span>
+                                                {getRankBadge(rk.rank && rk.rank > 0 ? rk.rank : null)}
                                               </TableCell>
                                               <TableCell className="text-right">
                                                 <div className="flex items-center justify-end gap-2">

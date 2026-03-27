@@ -48,6 +48,8 @@ export default async function WebhooksPage() {
                     <TableHead>Tarih</TableHead>
                     <TableHead>Mağaza</TableHead>
                     <TableHead>Olay Tipi</TableHead>
+                    <TableHead>İlan</TableHead>
+                    <TableHead className="text-right">Fiyat</TableHead>
                     <TableHead>Statü</TableHead>
                     <TableHead>Hata Mesajı</TableHead>
                   </TableRow>
@@ -62,7 +64,18 @@ export default async function WebhooksPage() {
                         {h.source?.replace("ITEMSatis-", "") || "Bilinmiyor"}
                       </TableCell>
                       <TableCell className="font-medium whitespace-nowrap">
-                        {h.eventType || "Bilinmiyor"}
+                        {(h.eventType || (h.payloadJson as any)?.details?.event || "unknown").toString().toLowerCase()}
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[260px] truncate" title={(h.payloadJson as any)?.details?.advert?.title || (h.payloadJson as any)?.title || ""}>
+                        {(h.payloadJson as any)?.details?.advert?.title || "-"}
+                      </TableCell>
+                      <TableCell className="text-right text-xs">
+                        {(() => {
+                          const rawPrice = (h.payloadJson as any)?.details?.advert?.price;
+                          if (!rawPrice) return "-";
+                          const p = Number(rawPrice);
+                          return Number.isFinite(p) ? `${p.toFixed(2)} TL` : `${rawPrice} TL`;
+                        })()}
                       </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${

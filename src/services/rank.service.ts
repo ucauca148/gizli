@@ -11,6 +11,7 @@ export interface MyListing {
 export interface RankResult {
   myListings: MyListing[];
   marketCheapest: number;
+  marketCheapestUrl?: string;
   totalListings: number;
 }
 
@@ -119,6 +120,7 @@ export async function findMyRanks(
 
   // 2. Fetch Category Pages via simple GET requests and parse `.advert-data`
   let marketCheapest = Infinity;
+  let marketCheapestUrl: string | undefined = undefined;
   let totalListingsScanned = 0;
   const seenListingIds = new Set<string>();
 
@@ -139,6 +141,12 @@ export async function findMyRanks(
               const pMatch = textContent.match(/([\d.,]+)\s*(?:₺|TL)/i) || outerHTML.match(/og:price:amount"[^>]+content="([\d.,]+)"/i);
               if (pMatch) {
                  marketCheapest = parseTurkishPrice(pMatch[1]);
+                 const href = firstItem.getAttribute("href");
+                 if (href) {
+                   marketCheapestUrl = href.startsWith("http")
+                     ? href
+                     : `https://www.itemsatis.com${href}`;
+                 }
               }
            }
         }
@@ -214,7 +222,12 @@ export async function findMyRanks(
             seenListingIds.add(listingId);
             totalListingsScanned++;
 
-            if (price > 0 && price < marketCheapest) marketCheapest = price;
+            if (price > 0 && price < marketCheapest) {
+              marketCheapest = price;
+              marketCheapestUrl = href.startsWith("http")
+                ? href
+                : `https://www.itemsatis.com${href}`;
+            }
 
             if (seller.toLowerCase() === normalizedStoreName) {
                const title = linkNode.getAttribute("title") || linkNode.innerText.trim();
@@ -264,6 +277,7 @@ export async function findMyRanks(
   return {
     myListings,
     marketCheapest: marketCheapest === Infinity ? 0 : marketCheapest,
+    marketCheapestUrl,
     totalListings: totalListingsScanned,
   };
 }
