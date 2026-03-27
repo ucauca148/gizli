@@ -2,6 +2,33 @@ import { prisma } from "@/lib/prisma";
 import { extractOrderFromPayload } from "@/lib/itemsatis-parser";
 import { upsertOrderAndItems } from "./order.service";
 
+function inferEventType(payload: any): string {
+  const direct = String(
+    payload?.event ||
+      payload?.event_type ||
+      payload?.type ||
+      payload?.action ||
+      payload?.details?.event ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (direct) {
+    if (direct === "advert_sold") return "sale";
+    return direct;
+  }
+
+  const text = `${payload?.title || ""} ${payload?.content || ""}`.toLowerCase();
+
+  if (text.includes("satıldı") || text.includes("satış")) return "sale";
+  if (text.includes("iade")) return "refund";
+  if (text.includes("değerlendirme") || text.includes("yorum")) return "new_review";
+  if (text.includes("iptal")) return "cancelled";
+
+  return "unknown";
+}
+
 /**
  * waitUntil() tarafından arka planda (Background) çalıştırılan webhook işleme fonksiyonu
  */
@@ -28,15 +55,8 @@ export async function processWebhookPayload(eventId: string) {
       return;
     }
 
-    // Esnek Event Tipi Belirleme (İtemSatış bazen details.event içinde gönderir)
-    const eventType = String(
-      payload.event ||
-        payload.event_type ||
-        payload.type ||
-        payload.action ||
-        payload.details?.event ||
-        "UNKNOWN"
-    ).toLowerCase();
+    // Esnek Event Tipi Belirleme (details.event + title/content fallback)
+    const eventType = inferEventType(payload);
     
     // Geçici "UNMAPPED" akışı: Bilinen eventler listesinde yoksa güvenle logla, hata fırlatma
     const knownEvents = [
@@ -44,7 +64,10 @@ export async function processWebhookPayload(eventId: string) {
       "order.approved",
       "order.cancelled",
       "product.out_of_stock",
-      "advert_sold",
+      "sale",
+      "refund",
+      "new_review",
+      "cancelled",
     ];
     
     if (!knownEvents.includes(eventType)) {
@@ -53,19 +76,34 @@ export async function processWebhookPayload(eventId: string) {
         data: {
           eventType,
           status: "UNMAPPED", // İstek başarıyla loglandı, ancak sistem şimdilik bu event tipini işlemiyor.
+          errorMessage: "Webhook alındı ancak olay tipi sınıflandırılamadı.",
           processedAt: new Date(),
         },
       });
       return;
     }
 
-    // advert_sold payload'ı sipariş şemasında olmayabilir; logu işlenmiş sayıp çık.
-    if (eventType === "advert_sold") {
+    // itemsatis bildirim eventleri sipariş şemasında olmayabilir; logu işlenmiş sayıp çık.
+    if (eventType === "sale" || eventType === "new_review") {
       await prisma.webhookEvent.update({
         where: { id: eventId },
         data: {
           eventType,
           status: "PROCESSED",
+          errorMessage: null,
+          processedAt: new Date(),
+        },
+      });
+      return;
+    }
+
+    if (eventType === "refund" || eventType === "cancelled") {
+      await prisma.webhookEvent.update({
+        where: { id: eventId },
+        data: {
+          eventType,
+          status: "CANCELLED",
+          errorMessage: null,
           processedAt: new Date(),
         },
       });
@@ -84,6 +122,7 @@ export async function processWebhookPayload(eventId: string) {
       data: {
         eventType,
         status: "PROCESSED",
+        errorMessage: null,
         processedAt: new Date(),
       },
     });

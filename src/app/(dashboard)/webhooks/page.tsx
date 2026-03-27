@@ -6,6 +6,19 @@ import { prisma } from "@/lib/prisma"
 export const revalidate = 0
 export const dynamic = 'force-dynamic'
 
+function formatEventTypeLabel(raw: string) {
+  const event = (raw || "").toLowerCase()
+  if (event === "sale" || event === "advert_sold") return "Satış"
+  if (event === "refund") return "İade"
+  if (event === "new_review") return "Yeni Değerlendirme"
+  if (event === "cancelled" || event === "order.cancelled") return "İptal"
+  if (event === "order.created") return "Sipariş Oluştu"
+  if (event === "order.approved") return "Sipariş Onaylandı"
+  if (event === "product.out_of_stock") return "Stok Bitti"
+  if (!event || event === "unknown") return "Bilinmiyor"
+  return event
+}
+
 export default async function WebhooksPage() {
   let hooks = []
   let error = null
@@ -58,13 +71,15 @@ export default async function WebhooksPage() {
                   {hooks.map((h) => (
                     <TableRow key={h.id}>
                       <TableCell className="whitespace-nowrap">
-                        {new Date(h.receivedAt).toLocaleString('tr-TR')}
+                        {new Date(h.receivedAt).toLocaleString('tr-TR', { timeZone: "Europe/Istanbul" })}
                       </TableCell>
                       <TableCell className="font-semibold text-primary">
                         {h.source?.replace("ITEMSatis-", "") || "Bilinmiyor"}
                       </TableCell>
                       <TableCell className="font-medium whitespace-nowrap">
-                        {(h.eventType || (h.payloadJson as any)?.details?.event || "unknown").toString().toLowerCase()}
+                        {formatEventTypeLabel(
+                          (h.eventType || (h.payloadJson as any)?.details?.event || "unknown").toString()
+                        )}
                       </TableCell>
                       <TableCell className="text-xs max-w-[260px] truncate" title={(h.payloadJson as any)?.details?.advert?.title || (h.payloadJson as any)?.title || ""}>
                         {(h.payloadJson as any)?.details?.advert?.title || "-"}
@@ -80,6 +95,7 @@ export default async function WebhooksPage() {
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                           h.status === 'PROCESSED' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
+                          h.status === 'CANCELLED' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300' :
                           h.status === 'FAILED' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' :
                           h.status === 'UNMAPPED' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
                           'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
