@@ -60,6 +60,11 @@ function parseTurkishPrice(priceStr: string): number {
   return parseFloat(priceStr);
 }
 
+function extractListingId(href: string): string | null {
+  const match = href.match(/-(\d{4,12})\.html$/);
+  return match ? match[1] : null;
+}
+
 /**
  * Fetches all active listings for a store from their profile page.
  * Filters by a category keyword (partial URL slug match).
@@ -73,6 +78,7 @@ export async function findMyRanks(
   const urlParts = normalizedCategory.replace(/\.html$/, "").split("/");
   const categorySlug = urlParts[urlParts.length - 1]; // e.g. 'geforce-now-hesaplari'
   const categoryPrefix = categorySlug.split("-").slice(0, 2).join("-"); // 'geforce-now'
+  const normalizedStoreName = myStoreName.trim().toLowerCase();
 
   let siralama = "Varsayılan";
   try {
@@ -88,7 +94,7 @@ export async function findMyRanks(
     if (res.ok) {
         const html = await res.text();
         const allListingMatches = Array.from(
-          html.matchAll(/href=["'](\/[^"']+?-\d{4,8}\.html)["']/g)
+          html.matchAll(/href=["'](\/[^"']+?-\d{4,12}\.html)["']/g)
         ).map((m) => m[1]);
 
         const uniqueListings = Array.from(new Set(allListingMatches));
@@ -114,6 +120,7 @@ export async function findMyRanks(
   // 2. Fetch Category Pages via simple GET requests and parse `.advert-data`
   let marketCheapest = Infinity;
   let totalListingsScanned = 0;
+  const seenListingIds = new Set<string>();
 
   // We loop for maxPages pages on the given sort param. 
   // Wait, to guarantee getting absolute marketCheapest, we MUST query `siralama=en-dusuk-fiyat` page 1 at least once.
@@ -153,10 +160,10 @@ export async function findMyRanks(
          const html = await apiRes.text();
          const root = parse(html);
          
-         const links = Array.from(root.querySelectorAll("a[href]"))
+        const links = Array.from(root.querySelectorAll("a[href]"))
             .filter(a => {
             const h = a.getAttribute("href") || "";
-            return h.includes(categoryPrefix) && h.match(/\-\d{4,8}\.html$/) && !h.includes('/profil/') && !h.includes('/ilanlar');
+            return h.includes(categoryPrefix) && h.match(/\-\d{4,12}\.html$/) && !h.includes('/profil/') && !h.includes('/ilanlar');
          });
 
          const uniqueLinks = new Map();
@@ -167,6 +174,11 @@ export async function findMyRanks(
          if (uniqueLinks.size === 0) break; // Reached end of category
 
          for (const [href, linkNode] of Array.from(uniqueLinks.entries())) {
+           const listingId = extractListingId(href || "");
+           if (!listingId || seenListingIds.has(listingId)) {
+             continue;
+           }
+
             let container = linkNode;
             for(let i=0; i<8; i++) {
                let cls = container.getAttribute('class') || '';
@@ -189,13 +201,22 @@ export async function findMyRanks(
             const sellerNode = container.querySelector("a[href*='/profil/']");
             if (sellerNode) {
                seller = sellerNode.getAttribute("href")?.split('/profil/')[1]?.replace('.html', '') || "";
-            } else if (outerHTML.toLowerCase().includes(myStoreName.toLowerCase())) {
-               seller = myStoreName.toLowerCase();
+            } else if (outerHTML.toLowerCase().includes(normalizedStoreName)) {
+               seller = normalizedStoreName;
             }
+
+            // Listing card doğrulaması: satıcı bilgisi ya da fiyat görünmeli.
+            const looksLikeListingCard = !!seller || price > 0;
+            if (!looksLikeListingCard) {
+              continue;
+            }
+
+            seenListingIds.add(listingId);
+            totalListingsScanned++;
 
             if (price > 0 && price < marketCheapest) marketCheapest = price;
 
-            if (seller.toLowerCase() === myStoreName.toLowerCase()) {
+            if (seller.toLowerCase() === normalizedStoreName) {
                const title = linkNode.getAttribute("title") || linkNode.innerText.trim();
                let existing = myListings.find(m => href.includes(m.url.split('/').pop()!));
                if (existing) {
@@ -214,7 +235,6 @@ export async function findMyRanks(
             }
 
             currentRank++;
-            totalListingsScanned++;
          }
      } catch(e) {
          break;
