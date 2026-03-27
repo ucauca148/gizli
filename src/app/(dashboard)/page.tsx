@@ -16,15 +16,15 @@ async function getSummaryData() {
 
   const baseWhere = storeId ? { storeId } : {};
 
-  const todayOrders = await prisma.order.findMany({
-    where: { ...baseWhere, createdAt: { gte: today } },
+  const allOrders = await prisma.order.findMany({
+    where: { ...baseWhere },
     select: { status: true, totalAmount: true }
   });
 
-  const todaySalesCount = todayOrders.length;
-  const todayApprovedCount = todayOrders.filter(o => o.status === "APPROVED").length;
-  const todayCancelledCount = todayOrders.filter(o => o.status === "CANCELLED").length;
-  const todayRevenue = todayOrders
+  const totalSalesCount = allOrders.length;
+  const totalApprovedCount = allOrders.filter(o => o.status === "APPROVED").length;
+  const totalCancelledCount = allOrders.filter(o => o.status === "CANCELLED").length;
+  const totalRevenue = allOrders
     .filter(o => o.status === "APPROVED")
     .reduce((sum, o) => sum + Number(o.totalAmount), 0);
 
@@ -59,10 +59,10 @@ async function getSummaryData() {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return {
-    todaySalesCount,
-    todayApprovedCount,
-    todayCancelledCount,
-    todayRevenue,
+    totalSalesCount,
+    totalApprovedCount,
+    totalCancelledCount,
+    totalRevenue,
     last7DaysChart,
   };
 }
@@ -95,34 +95,34 @@ export default async function DashboardPage() {
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           <Card className="bg-gradient-to-br from-black/40 to-primary/5 border-primary/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-zinc-300">Toplam Sipariş (Bugün)</CardTitle>
+              <CardTitle className="text-sm font-semibold text-zinc-300">Toplam Sipariş</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-white tracking-tight">{summary.todaySalesCount}</div>
+              <div className="text-3xl font-bold text-white tracking-tight">{summary.totalSalesCount}</div>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-black/40 to-primary/5 border-primary/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-zinc-300">Toplam Ciro (Bugün)</CardTitle>
+              <CardTitle className="text-sm font-semibold text-zinc-300">Toplam Ciro</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-white tracking-tight">{summary.todayRevenue} <span className="text-xl text-zinc-500">₺</span></div>
+              <div className="text-3xl font-bold text-white tracking-tight">{summary.totalRevenue.toFixed(2)} <span className="text-xl text-zinc-500">₺</span></div>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-black/40 to-emerald-900/10 border-emerald-500/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-zinc-300">Onaylanan (Bugün)</CardTitle>
+              <CardTitle className="text-sm font-semibold text-zinc-300">Onaylanan</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-emerald-400 tracking-tight">{summary.todayApprovedCount}</div>
+              <div className="text-3xl font-bold text-emerald-400 tracking-tight">{summary.totalApprovedCount}</div>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-black/40 to-red-900/10 border-red-500/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-zinc-300">İptal Edilen (Bugün)</CardTitle>
+              <CardTitle className="text-sm font-semibold text-zinc-300">İptal Edilen</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-red-400 tracking-tight">{summary.todayCancelledCount}</div>
+              <div className="text-3xl font-bold text-red-400 tracking-tight">{summary.totalCancelledCount}</div>
             </CardContent>
           </Card>
         </div>
