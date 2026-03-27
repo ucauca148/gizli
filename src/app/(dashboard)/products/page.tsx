@@ -1,19 +1,32 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { prisma } from "@/lib/prisma"
+import { Input } from "@/components/ui/input"
 
 export const revalidate = 0
 export const dynamic = 'force-dynamic'
 
-export default async function ProductsPage() {
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams?: { q?: string }
+}) {
   let products = []
   let error = null
+  const query = (searchParams?.q || "").trim()
 
   try {
     // Ürünleri güncellenme tarihine göre ters sıralıyoruz
     products = await prisma.product.findMany({
+      where: query
+        ? {
+            OR: [
+              { itemsatisProductId: { contains: query, mode: "insensitive" } },
+              { title: { contains: query, mode: "insensitive" } },
+            ],
+          }
+        : undefined,
       orderBy: { updatedAt: 'desc' },
-      take: 50,
       include: {
         store: true
       }
@@ -27,6 +40,14 @@ export default async function ProductsPage() {
       <div className="flex flex-col gap-1 mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Ürün Performansı</h1>
         <p className="text-muted-foreground">Mağazanıza eklenmiş, satışı gerçekleşmiş ürünlerin genel durumu ve fiyatları.</p>
+        <div className="mt-3">
+          <Input
+            readOnly
+            value={query}
+            placeholder="Filtre yok (webhooktan gelince burada otomatik dolar)"
+            className="max-w-md"
+          />
+        </div>
       </div>
 
       {error ? (

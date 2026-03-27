@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { prisma } from "@/lib/prisma"
+import Link from "next/link"
 
 // Her zaman taze datayı görmek için full dinamik
 export const revalidate = 0
@@ -31,6 +32,58 @@ function scoreBadge(score: number | string | undefined) {
   if (n >= 9) return "text-emerald-400"
   if (n >= 7) return "text-yellow-400"
   return "text-red-400"
+}
+
+function renderStatus(status: string, eventType: string) {
+  const event = eventType.toLowerCase()
+  if (status === "PROCESSED") {
+    const label = event === "sale" || event === "advert_sold" ? "Onaylandı" : "İşlendi"
+    return (
+      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+        {label}
+      </span>
+    )
+  }
+  if (status === "CANCELLED") {
+    return (
+      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
+        İptal
+      </span>
+    )
+  }
+  if (status === "ACTION_REQUIRED") {
+    return (
+      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
+        Aksiyon Gerekli
+      </span>
+    )
+  }
+  if (status === "INFO") {
+    return (
+      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+        Bilgi
+      </span>
+    )
+  }
+  if (status === "FAILED") {
+    return (
+      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
+        Hata
+      </span>
+    )
+  }
+  if (status === "UNMAPPED") {
+    return (
+      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">
+        Eşleşmedi
+      </span>
+    )
+  }
+  return (
+    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300">
+      {status}
+    </span>
+  )
 }
 
 export default async function WebhooksPage() {
@@ -76,7 +129,7 @@ export default async function WebhooksPage() {
                     <TableHead>Mağaza</TableHead>
                     <TableHead>Olay Tipi</TableHead>
                     <TableHead>İlan</TableHead>
-                    <TableHead className="text-right">Fiyat</TableHead>
+                    <TableHead className="text-right w-[120px]">Fiyat</TableHead>
                     <TableHead>Statü</TableHead>
                     <TableHead>Detay</TableHead>
                   </TableRow>
@@ -89,6 +142,7 @@ export default async function WebhooksPage() {
                         const details = payload.details || {}
                         const eventType = (h.eventType || details.event || "unknown").toString().toLowerCase()
                         const reviewRating = details?.review?.rating || {}
+                        const advertId = details?.advert?.id ? String(details.advert.id) : ""
                         const rowTitle =
                           details?.advert?.title ||
                           payload?.title ||
@@ -131,25 +185,25 @@ export default async function WebhooksPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-xs max-w-[260px] truncate" title={rowTitle}>
-                        {rowTitle}
+                        {advertId ? (
+                          <Link
+                            href={`/products?q=${encodeURIComponent(advertId)}`}
+                            className="text-primary hover:underline"
+                            title="Ürün kapsamında bu ilanı aç"
+                          >
+                            {rowTitle}
+                          </Link>
+                        ) : (
+                          rowTitle
+                        )}
                       </TableCell>
-                      <TableCell className="text-right text-xs">
+                      <TableCell className="text-right text-sm font-semibold whitespace-nowrap">
                         {priceText}
                       </TableCell>
                       <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          h.status === 'PROCESSED' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
-                          h.status === 'CANCELLED' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300' :
-                          h.status === 'ACTION_REQUIRED' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' :
-                          h.status === 'INFO' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' :
-                          h.status === 'FAILED' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' :
-                          h.status === 'UNMAPPED' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
-                          'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
-                        }`}>
-                          {h.status}
-                        </span>
+                        {renderStatus(h.status, eventType)}
                       </TableCell>
-                      <TableCell className="text-xs max-w-[200px] lg:max-w-[420px]">
+                      <TableCell className="text-xs max-w-[220px] lg:max-w-[460px]">
                         {eventType === "review_received" ? (
                           <div className="flex items-center gap-2 font-semibold">
                             <span className={scoreBadge(reviewRating.iletisim)}>İ:{reviewRating.iletisim ?? "-"}</span>
@@ -157,6 +211,10 @@ export default async function WebhooksPage() {
                             <span className={scoreBadge(reviewRating.memnuniyet)}>M:{reviewRating.memnuniyet ?? "-"}</span>
                             <span className={scoreBadge(reviewRating.guvenilirlik)}>G:{reviewRating.guvenilirlik ?? "-"}</span>
                           </div>
+                        ) : eventType === "sale" || eventType === "advert_sold" ? (
+                          <span title={details?.customer?.name || ""} className="truncate block">
+                            Alıcı: {details?.customer?.name || details?.customer?.username || "Bilinmiyor"}
+                          </span>
                         ) : (
                           <span title={h.errorMessage || ""} className="truncate block">
                             {h.errorMessage || "-"}
