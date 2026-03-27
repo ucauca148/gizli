@@ -2,6 +2,16 @@ import { prisma } from "@/lib/prisma";
 import { extractOrderFromPayload } from "@/lib/itemsatis-parser";
 import { upsertOrderAndItems } from "./order.service";
 
+type EventResolution = {
+  status:
+    | "PROCESSED"
+    | "CANCELLED"
+    | "UNMAPPED"
+    | "ACTION_REQUIRED"
+    | "INFO";
+  errorMessage?: string | null;
+};
+
 function inferEventType(payload: any): string {
   const direct = String(
     payload?.event ||
@@ -27,6 +37,83 @@ function inferEventType(payload: any): string {
   if (text.includes("iptal")) return "cancelled";
 
   return "unknown";
+}
+
+function compactReviewScore(payload: any): string {
+  const rating = payload?.details?.review?.rating || {};
+  const i = rating.iletisim ?? "-";
+  const t = rating.teslimat ?? "-";
+  const m = rating.memnuniyet ?? "-";
+  const g = rating.guvenilirlik ?? "-";
+  return `İ:${i} T:${t} M:${m} G:${g}`;
+}
+
+function resolveEventOutcome(eventType: string, payload: any): EventResolution {
+  if (eventType === "sale" || eventType === "order.created" || eventType === "order.approved") {
+    return { status: "PROCESSED", errorMessage: null };
+  }
+
+  if (eventType === "refund" || eventType === "cancelled" || eventType === "order.cancelled") {
+    return { status: "CANCELLED", errorMessage: "İşlem iade/iptal olarak bildirildi." };
+  }
+
+  if (eventType === "question_asked") {
+    const question = payload?.details?.question?.message || payload?.content || "Yeni soru alındı.";
+    return { status: "ACTION_REQUIRED", errorMessage: question };
+  }
+
+  if (eventType === "sms_sent") {
+    const message = payload?.details?.message || payload?.content || "SMS bildirimi alındı.";
+    return { status: "INFO", errorMessage: message };
+  }
+
+  if (eventType === "stock_finished" || eventType === "product.out_of_stock") {
+    const advert = payload?.details?.advert || {};
+    const advertId = advert?.id ? String(advert.id) : null;
+    const advertTitle = advert?.title ? String(advert.title) : "İlan";
+    const link = advertId ? `https://www.itemsatis.com/search?keyword=${encodeURIComponent(advertId)}` : "";
+    return {
+      status: "ACTION_REQUIRED",
+      errorMessage: link
+        ? `${advertTitle} stoğu tükendi. İlan ID: ${advertId}. Kontrol: ${link}`
+        : `${advertTitle} stoğu tükendi.`,
+    };
+  }
+
+  if (eventType === "review_received" || eventType === "new_review") {
+    return { status: "PROCESSED", errorMessage: compactReviewScore(payload) };
+  }
+
+  if (eventType === "withdrawal_approved") {
+    const detailsRaw = payload?.details?.data?.details;
+    let amount = payload?.details?.data?.amount;
+    let withdrawalId = payload?.details?.data?.withdrawal_id;
+    let bankName = payload?.details?.data?.bank_name;
+
+    if (typeof detailsRaw === "string") {
+      try {
+        const parsed = JSON.parse(detailsRaw);
+        amount = amount ?? parsed?.amount;
+        withdrawalId = withdrawalId ?? parsed?.withdrawal_id;
+        bankName = bankName ?? parsed?.bank_name;
+      } catch {
+        // ignore parse failure
+      }
+    }
+
+    const amountText = amount != null ? `${Number(amount).toFixed(2)} TL` : "Tutar bilinmiyor";
+    const idText = withdrawalId ? `ID:${withdrawalId}` : "ID:bilinmiyor";
+    const bankText = bankName ? `Banka:${bankName}` : "";
+    return { status: "PROCESSED", errorMessage: `${idText} ${amountText} ${bankText}`.trim() };
+  }
+
+  if (eventType === "doping_expired") {
+    const doping = payload?.details?.doping_name || payload?.details?.doping_type || "Doping";
+    const advertTitle = payload?.details?.advert?.title || "İlan";
+    return { status: "ACTION_REQUIRED", errorMessage: `${advertTitle} için ${doping} süresi doldu.` };
+  }
+
+  return { status: "UNMAPPED", errorMessage: "Webhook alındı ancak olay tipi sınıflandırılamadı." };
 }
 
 /**
@@ -68,42 +155,46 @@ export async function processWebhookPayload(eventId: string) {
       "refund",
       "new_review",
       "cancelled",
+      "question_asked",
+      "sms_sent",
+      "stock_finished",
+      "review_received",
+      "withdrawal_approved",
+      "doping_expired",
     ];
     
     if (!knownEvents.includes(eventType)) {
+      const unresolved = resolveEventOutcome("unknown", payload);
       await prisma.webhookEvent.update({
         where: { id: eventId },
         data: {
           eventType,
-          status: "UNMAPPED", // İstek başarıyla loglandı, ancak sistem şimdilik bu event tipini işlemiyor.
-          errorMessage: "Webhook alındı ancak olay tipi sınıflandırılamadı.",
+          status: unresolved.status,
+          errorMessage: unresolved.errorMessage,
           processedAt: new Date(),
         },
       });
       return;
     }
 
-    // itemsatis bildirim eventleri sipariş şemasında olmayabilir; logu işlenmiş sayıp çık.
-    if (eventType === "sale" || eventType === "new_review") {
+    // Sipariş akışına bağlı olmayan eventleri sonuçlandır.
+    if (
+      eventType === "sale" ||
+      eventType === "new_review" ||
+      eventType === "question_asked" ||
+      eventType === "sms_sent" ||
+      eventType === "stock_finished" ||
+      eventType === "review_received" ||
+      eventType === "withdrawal_approved" ||
+      eventType === "doping_expired"
+    ) {
+      const outcome = resolveEventOutcome(eventType, payload);
       await prisma.webhookEvent.update({
         where: { id: eventId },
         data: {
           eventType,
-          status: "PROCESSED",
-          errorMessage: null,
-          processedAt: new Date(),
-        },
-      });
-      return;
-    }
-
-    if (eventType === "refund" || eventType === "cancelled") {
-      await prisma.webhookEvent.update({
-        where: { id: eventId },
-        data: {
-          eventType,
-          status: "CANCELLED",
-          errorMessage: null,
+          status: outcome.status,
+          errorMessage: outcome.errorMessage ?? null,
           processedAt: new Date(),
         },
       });
@@ -122,7 +213,7 @@ export async function processWebhookPayload(eventId: string) {
       data: {
         eventType,
         status: "PROCESSED",
-        errorMessage: null,
+        errorMessage: resolveEventOutcome(eventType, payload).errorMessage ?? null,
         processedAt: new Date(),
       },
     });

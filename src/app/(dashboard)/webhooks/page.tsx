@@ -11,12 +11,26 @@ function formatEventTypeLabel(raw: string) {
   if (event === "sale" || event === "advert_sold") return "Satış"
   if (event === "refund") return "İade"
   if (event === "new_review") return "Yeni Değerlendirme"
+  if (event === "review_received") return "Yeni Değerlendirme"
+  if (event === "question_asked") return "Soru Cevap"
+  if (event === "sms_sent") return "SMS"
+  if (event === "stock_finished") return "Stok Bitti"
+  if (event === "withdrawal_approved") return "Çekim Onaylandı"
+  if (event === "doping_expired") return "Doping Süresi Doldu"
   if (event === "cancelled" || event === "order.cancelled") return "İptal"
   if (event === "order.created") return "Sipariş Oluştu"
   if (event === "order.approved") return "Sipariş Onaylandı"
   if (event === "product.out_of_stock") return "Stok Bitti"
   if (!event || event === "unknown") return "Bilinmiyor"
   return event
+}
+
+function scoreBadge(score: number | string | undefined) {
+  const n = Number(score)
+  if (!Number.isFinite(n)) return "text-zinc-400"
+  if (n >= 9) return "text-emerald-400"
+  if (n >= 7) return "text-yellow-400"
+  return "text-red-400"
 }
 
 export default async function WebhooksPage() {
@@ -64,12 +78,47 @@ export default async function WebhooksPage() {
                     <TableHead>İlan</TableHead>
                     <TableHead className="text-right">Fiyat</TableHead>
                     <TableHead>Statü</TableHead>
-                    <TableHead>Hata Mesajı</TableHead>
+                    <TableHead>Detay</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {hooks.map((h) => (
                     <TableRow key={h.id}>
+                      {(() => {
+                        const payload = (h.payloadJson as any) || {}
+                        const details = payload.details || {}
+                        const eventType = (h.eventType || details.event || "unknown").toString().toLowerCase()
+                        const reviewRating = details?.review?.rating || {}
+                        const rowTitle =
+                          details?.advert?.title ||
+                          payload?.title ||
+                          details?.sender?.username ||
+                          details?.asker?.username ||
+                          "-"
+                        const priceRaw =
+                          details?.advert?.price ||
+                          details?.data?.amount ||
+                          details?.amount
+
+                        let priceText = "-"
+                        if (priceRaw != null) {
+                          const n = Number(priceRaw)
+                          priceText = Number.isFinite(n) ? `${n.toFixed(2)} TL` : `${priceRaw} TL`
+                        } else if (eventType === "withdrawal_approved") {
+                          const innerRaw = details?.data?.details
+                          if (typeof innerRaw === "string") {
+                            try {
+                              const parsed = JSON.parse(innerRaw)
+                              const n = Number(parsed?.amount)
+                              if (Number.isFinite(n)) priceText = `${n.toFixed(2)} TL`
+                            } catch {
+                              // ignore
+                            }
+                          }
+                        }
+
+                        return (
+                          <>
                       <TableCell className="whitespace-nowrap">
                         {new Date(h.receivedAt).toLocaleString('tr-TR', { timeZone: "Europe/Istanbul" })}
                       </TableCell>
@@ -78,24 +127,21 @@ export default async function WebhooksPage() {
                       </TableCell>
                       <TableCell className="font-medium whitespace-nowrap">
                         {formatEventTypeLabel(
-                          (h.eventType || (h.payloadJson as any)?.details?.event || "unknown").toString()
+                          eventType
                         )}
                       </TableCell>
-                      <TableCell className="text-xs max-w-[260px] truncate" title={(h.payloadJson as any)?.details?.advert?.title || (h.payloadJson as any)?.title || ""}>
-                        {(h.payloadJson as any)?.details?.advert?.title || "-"}
+                      <TableCell className="text-xs max-w-[260px] truncate" title={rowTitle}>
+                        {rowTitle}
                       </TableCell>
                       <TableCell className="text-right text-xs">
-                        {(() => {
-                          const rawPrice = (h.payloadJson as any)?.details?.advert?.price;
-                          if (!rawPrice) return "-";
-                          const p = Number(rawPrice);
-                          return Number.isFinite(p) ? `${p.toFixed(2)} TL` : `${rawPrice} TL`;
-                        })()}
+                        {priceText}
                       </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                           h.status === 'PROCESSED' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
                           h.status === 'CANCELLED' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300' :
+                          h.status === 'ACTION_REQUIRED' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' :
+                          h.status === 'INFO' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' :
                           h.status === 'FAILED' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' :
                           h.status === 'UNMAPPED' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
                           'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
@@ -103,9 +149,23 @@ export default async function WebhooksPage() {
                           {h.status}
                         </span>
                       </TableCell>
-                      <TableCell className="text-xs max-w-[200px] lg:max-w-[400px] truncate" title={h.errorMessage || ""}>
-                        {h.errorMessage || "-"}
+                      <TableCell className="text-xs max-w-[200px] lg:max-w-[420px]">
+                        {eventType === "review_received" ? (
+                          <div className="flex items-center gap-2 font-semibold">
+                            <span className={scoreBadge(reviewRating.iletisim)}>İ:{reviewRating.iletisim ?? "-"}</span>
+                            <span className={scoreBadge(reviewRating.teslimat)}>T:{reviewRating.teslimat ?? "-"}</span>
+                            <span className={scoreBadge(reviewRating.memnuniyet)}>M:{reviewRating.memnuniyet ?? "-"}</span>
+                            <span className={scoreBadge(reviewRating.guvenilirlik)}>G:{reviewRating.guvenilirlik ?? "-"}</span>
+                          </div>
+                        ) : (
+                          <span title={h.errorMessage || ""} className="truncate block">
+                            {h.errorMessage || "-"}
+                          </span>
+                        )}
                       </TableCell>
+                          </>
+                        )
+                      })()}
                     </TableRow>
                   ))}
                 </TableBody>
