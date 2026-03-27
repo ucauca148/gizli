@@ -52,6 +52,7 @@ export async function upsertOrderAndItems(orderData: ParsedOrderData) {
       itemsatisOrderId: orderData.itemsatisOrderId,
       status: orderData.status,
       totalAmount: orderData.totalAmount || 0,
+      ...(orderData.occurredAt ? { createdAt: orderData.occurredAt } : {}),
     },
   });
 

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { extractOrderFromPayload } from "@/lib/itemsatis-parser";
+import { extractOrderFromPayload, extractSaleOrderFromPayload } from "@/lib/itemsatis-parser";
 import { upsertOrderAndItems } from "./order.service";
 
 type EventResolution = {
@@ -189,6 +189,15 @@ export async function processWebhookPayload(eventId: string) {
       eventType === "doping_expired"
     ) {
       const outcome = resolveEventOutcome(eventType, payload);
+
+      // Satış bildirimleri: `orders` tablosuna yazılmazsa dashboard hep 0 görünür.
+      if (eventType === "sale") {
+        const saleOrder = extractSaleOrderFromPayload(payload, eventId);
+        if (saleOrder) {
+          await upsertOrderAndItems(saleOrder);
+        }
+      }
+
       await prisma.webhookEvent.update({
         where: { id: eventId },
         data: {

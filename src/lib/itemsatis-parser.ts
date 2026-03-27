@@ -1,6 +1,72 @@
 import { WebhookPayloadSchema } from "@/validators/itemsatis-webhook";
 import { ParsedOrderData, ParsedProductData } from "@/types/itemsatis";
 
+function unixSecondsToDate(seconds: unknown): Date | undefined {
+  if (seconds == null) return undefined;
+  const n = typeof seconds === "string" ? Number(seconds) : Number(seconds);
+  if (Number.isNaN(n) || n <= 0) return undefined;
+  return new Date(n * 1000);
+}
+
+/**
+ * `advert_sold` / "İlanınız Satıldı" tipi bildirimlerden Order tablosu için kayıt üretir.
+ * Dashboard metrikleri `orders` tablosunu kullandığından bu akış zorunlu.
+ */
+export function extractSaleOrderFromPayload(
+  payloadJson: any,
+  eventId?: string
+): ParsedOrderData | null {
+  const details = payloadJson?.details;
+  if (details?.test === true) return null;
+
+  const eventName = String(details?.event || "").toLowerCase();
+  const title = String(payloadJson?.title || "").toLowerCase();
+  const looksLikeSale =
+    eventName === "advert_sold" ||
+    eventName === "sale" ||
+    title.includes("satıldı");
+
+  if (!looksLikeSale) return null;
+
+  const advert = details?.advert;
+  if (!advert?.id) return null;
+
+  const advertId = String(advert.id);
+  const timePart =
+    details?.time != null
+      ? String(details.time)
+      : eventId
+        ? eventId.replace(/-/g, "").slice(0, 12)
+        : String(Date.now());
+  const customerId =
+    details?.customer?.id != null ? String(details.customer.id) : "0";
+
+  const itemsatisOrderId = `IS-SALE-${advertId}-${timePart}-${customerId}`;
+  const price = Number(advert.price ?? payloadJson?.amount ?? 0);
+  const storeCode =
+    payloadJson?._injected_store_code ||
+    details?.seller?.name ||
+    details?.seller?.username;
+
+  const occurredAt = unixSecondsToDate(details?.time);
+
+  const product: ParsedProductData = {
+    itemsatisProductId: advertId,
+    title: String(advert.title || "İlan"),
+    price: Number.isFinite(price) ? price : 0,
+    quantity: 1,
+  };
+
+  return {
+    itemsatisOrderId,
+    storeCode: storeCode ? String(storeCode) : undefined,
+    totalAmount: product.price,
+    status: "APPROVED",
+    products: [product],
+    occurredAt,
+  };
+}
+
 /**
  * Gelen ham JSON payload'ını alır, eksik alanları tolere ederek (defensive)
  * standart bir formata (ParsedOrderData) dönüştürür.

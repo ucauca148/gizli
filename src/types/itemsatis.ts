@@ -19,6 +19,8 @@ export interface ParsedOrderData {
   totalAmount: number;
   status: "PENDING" | "APPROVED" | "CANCELLED";
   products: ParsedProductData[];
+  /** Webhook işlendiği an değil; ItemSatis’in bildirdiği satış zamanı (unix sn → Date) */
+  occurredAt?: Date;
 }
 
 export interface DashboardSummaryResponse {
