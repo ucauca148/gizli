@@ -7,7 +7,11 @@ export const dynamic = 'force-dynamic'
 async function getSummaryData() {
   const storeId = null; // Gelişmiş aşamada props'tan alınabilir
   
-  const today = new Date();
+  const now = new Date();
+  const last24hAgo = new Date(now);
+  last24hAgo.setHours(now.getHours() - 24);
+
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
 
   const sevenDaysAgo = new Date();
@@ -16,16 +20,23 @@ async function getSummaryData() {
 
   const baseWhere = storeId ? { storeId } : {};
 
-  const allOrders = await prisma.order.findMany({
-    where: { ...baseWhere },
-    select: { status: true, totalAmount: true }
+  // Webhook'tan işlenen siparişler burada order tablosu üzerinden gelir.
+  const last24hOrders = await prisma.order.findMany({
+    where: { ...baseWhere, createdAt: { gte: last24hAgo } },
+    select: { status: true, totalAmount: true, createdAt: true }
   });
 
-  const totalSalesCount = allOrders.length;
-  const totalApprovedCount = allOrders.filter(o => o.status === "APPROVED").length;
-  const totalCancelledCount = allOrders.filter(o => o.status === "CANCELLED").length;
-  const totalRevenue = allOrders
-    .filter(o => o.status === "APPROVED")
+  const last24hSalesCount = last24hOrders.length;
+  const last24hApprovedOrders = last24hOrders.filter((o) => o.status === "APPROVED");
+  const last24hCancelledOrders = last24hOrders.filter((o) => o.status === "CANCELLED");
+
+  const last24hApprovedCount = last24hApprovedOrders.length;
+  const last24hCancelledCount = last24hCancelledOrders.length;
+
+  const last24hApprovedRevenue = last24hApprovedOrders
+    .reduce((sum, o) => sum + Number(o.totalAmount), 0);
+
+  const last24hCancelledRevenue = last24hCancelledOrders
     .reduce((sum, o) => sum + Number(o.totalAmount), 0);
 
   const last7DaysOrders = await prisma.order.findMany({
@@ -59,10 +70,11 @@ async function getSummaryData() {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return {
-    totalSalesCount,
-    totalApprovedCount,
-    totalCancelledCount,
-    totalRevenue,
+    last24hSalesCount,
+    last24hApprovedCount,
+    last24hCancelledCount,
+    last24hApprovedRevenue,
+    last24hCancelledRevenue,
     last7DaysChart,
   };
 }
@@ -95,34 +107,40 @@ export default async function DashboardPage() {
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           <Card className="bg-gradient-to-br from-black/40 to-primary/5 border-primary/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-zinc-300">Toplam Sipariş</CardTitle>
+              <CardTitle className="text-sm font-semibold text-zinc-300">Son 24 Saat Sipariş</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-white tracking-tight">{summary.totalSalesCount}</div>
+              <div className="text-3xl font-bold text-white tracking-tight">{summary.last24hSalesCount}</div>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-black/40 to-primary/5 border-primary/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-zinc-300">Toplam Ciro</CardTitle>
+              <CardTitle className="text-sm font-semibold text-zinc-300">Onaylanan Ciro (Son 24 Saat)</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-white tracking-tight">{summary.totalRevenue.toFixed(2)} <span className="text-xl text-zinc-500">₺</span></div>
+              <div className="text-3xl font-bold text-white tracking-tight">{summary.last24hApprovedRevenue.toFixed(2)} <span className="text-xl text-zinc-500">₺</span></div>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-black/40 to-emerald-900/10 border-emerald-500/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-zinc-300">Onaylanan</CardTitle>
+              <CardTitle className="text-sm font-semibold text-zinc-300">Onaylanan Adet & Tutar</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-emerald-400 tracking-tight">{summary.totalApprovedCount}</div>
+              <div className="text-3xl font-bold text-emerald-400 tracking-tight">{summary.last24hApprovedCount}</div>
+              <div className="mt-2 text-sm text-emerald-300/90 font-semibold">
+                {summary.last24hApprovedRevenue.toFixed(2)} ₺
+              </div>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-black/40 to-red-900/10 border-red-500/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-zinc-300">İptal Edilen</CardTitle>
+              <CardTitle className="text-sm font-semibold text-zinc-300">İptal Edilen Adet & Tutar</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-red-400 tracking-tight">{summary.totalCancelledCount}</div>
+              <div className="text-3xl font-bold text-red-400 tracking-tight">{summary.last24hCancelledCount}</div>
+              <div className="mt-2 text-sm text-red-300/90 font-semibold">
+                {summary.last24hCancelledRevenue.toFixed(2)} ₺
+              </div>
             </CardContent>
           </Card>
         </div>
