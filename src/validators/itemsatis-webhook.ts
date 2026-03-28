@@ -1,44 +1,73 @@
-import { z } from "zod";
-
 /**
- * İtemSatış'tan gelen webhook verilerinin resmi ve statik bir dökümantasyonu 
- * (veya değişmez bir şeması) olmadığını varsayarak "defensive" (savunmacı) 
- * bir Zod şeması tanımlıyoruz.
- * 
- * Amaç: Eksik, farklı formatta veya beklenmeyen bir tip geldiğinde çökmeyi engellemek.
+ * İtemSatış webhook payload'ı için savunmacı normalleştirme (daha önce Zod ile yapılıyordu;
+ * Next.js/Vercel webpack bazı Zod sürümlerinde "Cannot get final name for export 'z'" verdiği
+ * için eşdeğer mantık burada tutuluyor).
  */
-export const WebhookPayloadSchema = z.object({
-  // Event Tipini bulmak için muhtemel alanlar
-  event_type: z.string().optional(),
-  type: z.string().optional(),
-  action: z.string().optional(),
-  status: z.string().optional(),
 
-  // order_id number da gelebilir string de, string olarak dönüştürüyoruz
-  order_id: z.union([z.string(), z.number()])
-    .transform((val) => String(val))
-    .optional(),
+export type ValidatedWebhookPayload = Record<string, unknown> & {
+  event_type?: string;
+  type?: string;
+  action?: string;
+  status?: string;
+  order_id?: string;
+  store_id?: string;
+  amount?: number;
+  products?: unknown[];
+  /** İç içe sipariş alanları için (Zod `.data` ile aynı esneklik) */
+  data?: Record<string, unknown>;
+  _injected_store_code?: string;
+};
 
-  // store / mağaza tanımlayıcısı, genelde "seller_id" falan olabilir
-  store_id: z.union([z.string(), z.number()])
-    .transform((val) => String(val))
-    .optional(),
+function normalizeStringField(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  return String(v);
+}
 
-  // Tutar float, int veya string gelebilir, number'a çevirmeye çalış yoksa 0 ata
-  amount: z.union([z.number(), z.string()])
-    .transform((val) => Number(val))
-    .catch(0)
-    .optional(),
+export function parseWebhookPayload(raw: unknown): ValidatedWebhookPayload {
+  if (raw === null || raw === undefined || typeof raw !== "object" || Array.isArray(raw)) {
+    return {} as ValidatedWebhookPayload;
+  }
 
-  // Sipariş içeriğindeki ürünlerin listesi
-  products: z.array(z.any()).optional().catch([]),
+  const src = raw as Record<string, unknown>;
+  const out = { ...src } as ValidatedWebhookPayload;
 
-  // "data" adında nested bir object içine de koymuş olabilirler
-  data: z.any().optional(),
+  if ("order_id" in src && src.order_id !== undefined && src.order_id !== null) {
+    out.order_id = String(src.order_id);
+  }
 
-  // Bizim 2 mağaza için özel eklediğimiz injection (Parametre)
-  _injected_store_code: z.string().optional(),
+  if ("store_id" in src && src.store_id !== undefined && src.store_id !== null) {
+    out.store_id = String(src.store_id);
+  }
 
-}).passthrough(); // Tanımlamadığımız diğer tüm key'lerin geçmesine izin ver
+  if ("amount" in src && src.amount !== undefined) {
+    const n = Number(src.amount as number | string);
+    out.amount = Number.isFinite(n) ? n : 0;
+  }
 
-export type ValidatedWebhookPayload = z.infer<typeof WebhookPayloadSchema>;
+  if ("products" in src && src.products !== undefined) {
+    out.products = Array.isArray(src.products) ? src.products : [];
+  }
+
+  for (const key of ["event_type", "type", "action", "status", "_injected_store_code"] as const) {
+    if (key in src && src[key] !== undefined && src[key] !== null) {
+      out[key] = normalizeStringField(src[key]) as ValidatedWebhookPayload[typeof key];
+    }
+  }
+
+  if (
+    "data" in src &&
+    src.data !== undefined &&
+    src.data !== null &&
+    typeof src.data === "object" &&
+    !Array.isArray(src.data)
+  ) {
+    out.data = { ...(src.data as Record<string, unknown>) };
+  }
+
+  return out;
+}
+
+/** Zod API ile uyumlu: yalnızca `parse` kullanılıyor. */
+export const WebhookPayloadSchema = {
+  parse: parseWebhookPayload,
+};

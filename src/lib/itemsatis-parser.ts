@@ -74,14 +74,17 @@ export function extractSaleOrderFromPayload(
  * @param payloadJson WebhookEvent tablosundan veya Request'ten gelen ham json
  */
 export function extractOrderFromPayload(payloadJson: any): ParsedOrderData {
-  // Zod ile güvenle parse et, olmayan alanlar undefined kalacak
   const safeData = WebhookPayloadSchema.parse(payloadJson || {});
 
   // Sipariş ID'si: data objesinde olabilir, root'ta olabilir
-  const orderId = safeData.order_id || safeData.data?.order_id || `UNK-${Date.now()}`;
+  const rawOrderId = safeData.order_id ?? safeData.data?.order_id;
+  const orderId =
+    rawOrderId !== undefined && rawOrderId !== null && String(rawOrderId) !== ""
+      ? String(rawOrderId)
+      : `UNK-${Date.now()}`;
   
   // Tutar hesabı
-  const amount = safeData.amount || safeData.data?.amount || 0;
+  const amount = Number(safeData.amount ?? safeData.data?.amount ?? 0) || 0;
   
   // Olay Tipi (Event Type) - Status belirlemek için önemli
   const eventType = (safeData.event_type || safeData.type || safeData.action || safeData.status || "created").toLowerCase();
@@ -95,9 +98,12 @@ export function extractOrderFromPayload(payloadJson: any): ParsedOrderData {
   }
 
   // Ürünleri Çözümleme (Products array)
-  const rawProducts = safeData.products && safeData.products.length > 0 
-    ? safeData.products 
-    : (safeData.data?.products || []);
+  const rawProducts: unknown[] =
+    safeData.products && safeData.products.length > 0
+      ? safeData.products
+      : Array.isArray(safeData.data?.products)
+        ? safeData.data.products
+        : [];
 
   const parsedProducts: ParsedProductData[] = rawProducts.map((p: any) => ({
     itemsatisProductId: String(p.id || p.product_id || p.itemsatis_id || `PID-${Date.now()}`),
@@ -117,7 +123,13 @@ export function extractOrderFromPayload(payloadJson: any): ParsedOrderData {
   }
 
   // URL'den inject ettiğimiz `?store=XX` var mı? Yoksa payload içinden al
-  const storeCode = safeData._injected_store_code || safeData.data?._injected_store_code || safeData.store_id || safeData.data?.store_id;
+  const rawStore =
+    safeData._injected_store_code ??
+    safeData.data?._injected_store_code ??
+    safeData.store_id ??
+    safeData.data?.store_id;
+  const storeCode =
+    rawStore !== undefined && rawStore !== null ? String(rawStore) : undefined;
 
   return {
     itemsatisOrderId: orderId,
