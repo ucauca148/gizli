@@ -63,10 +63,19 @@ export async function cancelSaleFromWebhookAction(webhookEventId: string) {
     return { ok: false as const, message: "Bu satış zaten iptal olarak işaretli." };
   }
 
-  await prisma.order.update({
-    where: { id: order.id },
-    data: { status: "CANCELLED" },
-  });
+  await prisma.$transaction([
+    prisma.order.update({
+      where: { id: order.id },
+      data: { status: "CANCELLED" },
+    }),
+    prisma.webhookEvent.update({
+      where: { id: webhookEventId },
+      data: {
+        status: "CANCELLED",
+        errorMessage: "Panelden manuel iptal (sipariş CANCELLED).",
+      },
+    }),
+  ]);
 
   revalidatePath("/webhooks");
   revalidatePath("/");

@@ -299,10 +299,16 @@ export default async function WebhooksPage() {
                             <span className={scoreBadge(reviewRating.memnuniyet)}>M:{reviewRating.memnuniyet ?? "-"}</span>
                             <span className={scoreBadge(reviewRating.guvenilirlik)}>G:{reviewRating.guvenilirlik ?? "-"}</span>
                           </div>
-                        ) : eventType === "sale" || eventType === "advert_sold" ? (
-                          <span title={details?.customer?.name || ""} className="truncate block">
-                            Alıcı: {details?.customer?.name || details?.customer?.username || "Bilinmiyor"}
-                          </span>
+                        ) : isSaleLike ? (
+                          h.status === "CANCELLED" && h.errorMessage ? (
+                            <span title={h.errorMessage} className="truncate block text-orange-300/95">
+                              {h.errorMessage}
+                            </span>
+                          ) : (
+                            <span title={details?.customer?.name || ""} className="truncate block">
+                              Alıcı: {details?.customer?.name || details?.customer?.username || "Bilinmiyor"}
+                            </span>
+                          )
                         ) : (
                           <span title={h.errorMessage || ""} className="truncate block">
                             {h.errorMessage || "-"}
