@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
+import { CancelSaleButton } from "./cancel-sale-button"
 
 // Her zaman taze datayı görmek için full dinamik
 export const revalidate = 0
@@ -86,15 +87,41 @@ function renderStatus(status: string, eventType: string) {
   )
 }
 
+async function getOrderSnapshot24h() {
+  const now = new Date()
+  const last24hAgo = new Date(now)
+  last24hAgo.setHours(last24hAgo.getHours() - 24)
+
+  const rows = await prisma.order.findMany({
+    where: { createdAt: { gte: last24hAgo } },
+    select: { status: true, totalAmount: true },
+  })
+
+  const approved = rows.filter((o) => o.status === "APPROVED")
+  const cancelled = rows.filter((o) => o.status === "CANCELLED")
+
+  return {
+    total: rows.length,
+    approvedCount: approved.length,
+    cancelledCount: cancelled.length,
+    approvedRevenue: approved.reduce((s, o) => s + Number(o.totalAmount), 0),
+    cancelledRevenue: cancelled.reduce((s, o) => s + Number(o.totalAmount), 0),
+  }
+}
+
 export default async function WebhooksPage() {
   let hooks = []
   let error = null
+  let orderSnap: Awaited<ReturnType<typeof getOrderSnapshot24h>> | null = null
 
   try {
-    hooks = await prisma.webhookEvent.findMany({
-      orderBy: { receivedAt: 'desc' },
-      take: 50
-    })
+    ;[hooks, orderSnap] = await Promise.all([
+      prisma.webhookEvent.findMany({
+        orderBy: { receivedAt: "desc" },
+        take: 50,
+      }),
+      getOrderSnapshot24h(),
+    ])
   } catch (e: any) {
     error = e.message
   }
@@ -103,8 +130,55 @@ export default async function WebhooksPage() {
     <>
       <div className="flex flex-col gap-1 mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Webhook Log Merkezi</h1>
-        <p className="text-muted-foreground">İtemSatış'tan gelen son 50 webhook ham isteği ve işlenme durumu.</p>
+        <p className="text-muted-foreground">İtemSatış&apos;tan gelen son 50 webhook ham isteği ve işlenme durumu. Satış satırından siparişi manuel iptal edebilirsiniz; ana sayfadaki &quot;Son 24 saat&quot; özetine yansır.</p>
       </div>
+
+      {orderSnap && !error && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+          <Card className="border-white/10 bg-white/[0.03]">
+            <CardHeader className="pb-2">
+              <CardDescription>Sipariş (24s, tüm durumlar)</CardDescription>
+              <CardTitle className="text-2xl text-white">{orderSnap.total}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="border-emerald-500/20 bg-emerald-950/10">
+            <CardHeader className="pb-2">
+              <CardDescription className="text-emerald-200/80">Onaylı adet / ciro</CardDescription>
+              <CardTitle className="text-2xl text-emerald-300">
+                {orderSnap.approvedCount}{" "}
+                <span className="text-sm font-normal text-emerald-200/70">
+                  / {orderSnap.approvedRevenue.toFixed(2)} ₺
+                </span>
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="border-orange-500/20 bg-orange-950/10">
+            <CardHeader className="pb-2">
+              <CardDescription className="text-orange-200/80">İptal adet / tutar</CardDescription>
+              <CardTitle className="text-2xl text-orange-300">
+                {orderSnap.cancelledCount}{" "}
+                <span className="text-sm font-normal text-orange-200/70">
+                  / {orderSnap.cancelledRevenue.toFixed(2)} ₺
+                </span>
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="border-primary/20 bg-primary/5">
+            <CardHeader className="pb-2">
+              <CardDescription>Özet</CardDescription>
+              <CardTitle className="text-base font-medium text-zinc-200">
+                <Link href="/" className="text-primary hover:underline">
+                  Kapsamlı Özet
+                </Link>
+                {" · "}
+                <Link href="/products" className="text-primary hover:underline">
+                  Ürün Kapsamı
+                </Link>
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
+      )}
 
       {error ? (
          <Card className="border-destructive bg-destructive/10">
@@ -132,6 +206,7 @@ export default async function WebhooksPage() {
                     <TableHead className="text-right w-[120px]">Fiyat</TableHead>
                     <TableHead>Statü</TableHead>
                     <TableHead>Detay</TableHead>
+                    <TableHead className="text-right w-[120px]">İşlem</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -140,7 +215,20 @@ export default async function WebhooksPage() {
                       {(() => {
                         const payload = (h.payloadJson as any) || {}
                         const details = payload.details || {}
-                        const eventType = (h.eventType || details.event || "unknown").toString().toLowerCase()
+                        const eventType = (h.eventType || details.event || "unknown")
+                          .toString()
+                          .toLowerCase()
+                        const detailsEvent = String(details.event || "").toLowerCase()
+                        const titleLower =
+                          typeof payload.title === "string"
+                            ? payload.title.toLowerCase()
+                            : ""
+                        const isSaleLike =
+                          eventType === "sale" ||
+                          eventType === "advert_sold" ||
+                          detailsEvent === "advert_sold" ||
+                          titleLower.includes("satıldı")
+                        const canManualCancel = isSaleLike && h.status === "PROCESSED"
                         const reviewRating = details?.review?.rating || {}
                         const advertId = details?.advert?.id ? String(details.advert.id) : ""
                         const rowTitle =
@@ -220,6 +308,9 @@ export default async function WebhooksPage() {
                             {h.errorMessage || "-"}
                           </span>
                         )}
+                      </TableCell>
+                      <TableCell className="text-right align-top">
+                        <CancelSaleButton webhookEventId={h.id} show={canManualCancel} />
                       </TableCell>
                           </>
                         )

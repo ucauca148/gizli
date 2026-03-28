@@ -62,8 +62,28 @@ function parseTurkishPrice(priceStr: string): number {
 }
 
 function extractListingId(href: string): string | null {
-  const match = href.match(/-(\d{4,12})\.html$/);
+  const match = href.match(/-(\d{4,12})\.html(?:\?.*)?$/i);
   return match ? match[1] : null;
+}
+
+/** Kategori slug'ındaki anlamlı parçalar (profilde hangi ilanların bu kategoriye yakın olduğunu tahmin etmek için) */
+function categorySlugTokens(categorySlug: string): string[] {
+  const tokens = categorySlug
+    .split("-")
+    .map((t) => t.toLowerCase())
+    .filter((t) => t.length >= 4);
+  if (tokens.length > 0) return tokens;
+  const first = categorySlug.split("-")[0]?.toLowerCase();
+  if (first && first.length >= 3) return [first];
+  return [];
+}
+
+/** Profil path'inin bu kategoriyle ilişkili olma ihtimali (tam slug ilan URL'sinde nadiren geçer) */
+function profilePathMatchesCategory(relPath: string, categorySlug: string): boolean {
+  const low = relPath.toLowerCase();
+  const slugLow = categorySlug.toLowerCase();
+  if (low.includes(slugLow)) return true;
+  return categorySlugTokens(categorySlug).some((t) => low.includes(t));
 }
 
 /**
@@ -77,8 +97,7 @@ export async function findMyRanks(
 ): Promise<RankResult> {
   const normalizedCategory = categoryUrl.split('?')[0];
   const urlParts = normalizedCategory.replace(/\.html$/, "").split("/");
-  const categorySlug = urlParts[urlParts.length - 1]; // e.g. 'geforce-now-hesaplari'
-  const categoryPrefix = categorySlug.split("-").slice(0, 2).join("-"); // 'geforce-now'
+  const categorySlug = urlParts[urlParts.length - 1]; // e.g. 'crunchyroll-hesap-satis'
   const normalizedStoreName = myStoreName.trim().toLowerCase();
 
   let siralama = "Varsayılan";
@@ -99,9 +118,11 @@ export async function findMyRanks(
         ).map((m) => m[1]);
 
         const uniqueListings = Array.from(new Set(allListingMatches));
-        const myListingUrls = uniqueListings.filter((u) => u.includes(categoryPrefix));
+        const myListingUrls = uniqueListings.filter((u) =>
+          profilePathMatchesCategory(u, categorySlug)
+        );
 
-        for (const relUrl of myListingUrls.slice(0, 20)) {
+        for (const relUrl of myListingUrls.slice(0, 40)) {
            const fullUrl = `https://www.itemsatis.com${relUrl}`;
            // We could fetch each profile listing for exact price, but it takes time. 
            // We will rely on category ranking pass to assign price, and fetch selectively if not found!
@@ -109,7 +130,7 @@ export async function findMyRanks(
              title: relUrl.split('/').pop()?.replace('.html', '') || '', 
              url: fullUrl, 
              price: 0, 
-             category: categoryPrefix,
+             category: categorySlug,
              rank: 0 
            });
         }
@@ -168,11 +189,17 @@ export async function findMyRanks(
          const html = await apiRes.text();
          const root = parse(html);
          
-        const links = Array.from(root.querySelectorAll("a[href]"))
-            .filter(a => {
-            const h = a.getAttribute("href") || "";
-            return h.includes(categoryPrefix) && h.match(/\-\d{4,12}\.html$/) && !h.includes('/profil/') && !h.includes('/ilanlar');
-         });
+        // Bu sayfa zaten ilgili kategori listesi; ilan href'leri başlık slug'ı kullanır (crunchyroll-... vs kategori crunchyroll-hesap-satis).
+        // categoryPrefix ile süzmek birçok kategoriyi (Crunchyroll vb.) tamamen bozar.
+        const links = Array.from(root.querySelectorAll("a[href]")).filter((a) => {
+          const h = a.getAttribute("href") || "";
+          const path = h.startsWith("http") ? (() => { try { return new URL(h).pathname; } catch { return h; } })() : h;
+          return (
+            /-\d{4,12}\.html(?:\?.*)?$/i.test(path) &&
+            !path.includes("/profil/") &&
+            !path.includes("/ilanlar")
+          );
+        });
 
          const uniqueLinks = new Map();
          for(const l of links) {
@@ -182,7 +209,11 @@ export async function findMyRanks(
          if (uniqueLinks.size === 0) break; // Reached end of category
 
          for (const [href, linkNode] of Array.from(uniqueLinks.entries())) {
-           const listingId = extractListingId(href || "");
+           const hrefStr = href || "";
+           const listingPath = hrefStr.startsWith("http")
+             ? (() => { try { return new URL(hrefStr).pathname; } catch { return hrefStr; } })()
+             : hrefStr;
+           const listingId = extractListingId(listingPath);
            if (!listingId || seenListingIds.has(listingId)) {
              continue;
            }
@@ -224,24 +255,30 @@ export async function findMyRanks(
 
             if (price > 0 && price < marketCheapest) {
               marketCheapest = price;
-              marketCheapestUrl = href.startsWith("http")
-                ? href
-                : `https://www.itemsatis.com${href}`;
+              marketCheapestUrl = hrefStr.startsWith("http")
+                ? hrefStr
+                : `https://www.itemsatis.com${hrefStr}`;
             }
 
             if (seller.toLowerCase() === normalizedStoreName) {
                const title = linkNode.getAttribute("title") || linkNode.innerText.trim();
-               let existing = myListings.find(m => href.includes(m.url.split('/').pop()!));
+               const fullListingUrl = hrefStr.startsWith("http")
+                 ? hrefStr
+                 : `https://www.itemsatis.com${hrefStr}`;
+               const pop = listingPath.split("/").filter(Boolean).pop() || "";
+               let existing = myListings.find(
+                 (m) => pop && m.url.includes(pop)
+               );
                if (existing) {
                   existing.rank = currentRank;
                   existing.price = price;
                   existing.title = title || existing.title;
                } else {
                   myListings.push({
-                     title: title || href.split('/').pop() || '',
-                     url: `https://www.itemsatis.com${href}`,
+                     title: title || pop || '',
+                     url: fullListingUrl,
                      price,
-                     category: categoryPrefix,
+                     category: categorySlug,
                      rank: currentRank
                   });
                }
