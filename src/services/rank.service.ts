@@ -66,15 +66,64 @@ function extractListingId(href: string): string | null {
   return match ? match[1] : null;
 }
 
+function getPathFromHref(href: string): string {
+  if (!href) return "";
+  if (href.startsWith("http")) {
+    try {
+      return new URL(href).pathname;
+    } catch {
+      return href;
+    }
+  }
+  return href;
+}
+
+function getNearestSeller(node: any): string {
+  let cursor = node;
+  for (let i = 0; i < 8; i++) {
+    const parent = cursor?.parentNode;
+    if (!parent || typeof parent.querySelector !== "function") break;
+    const sellerNode = parent.querySelector("a[href*='/profil/']");
+    if (sellerNode) {
+      return (
+        sellerNode
+          .getAttribute("href")
+          ?.split("/profil/")[1]
+          ?.replace(".html", "")
+          ?.trim()
+          ?.toLowerCase() || ""
+      );
+    }
+    cursor = parent;
+  }
+  return "";
+}
+
 /** Kategori slug'ındaki anlamlı parçalar (profilde hangi ilanların bu kategoriye yakın olduğunu tahmin etmek için) */
 function categorySlugTokens(categorySlug: string): string[] {
+  const stopWords = new Set([
+    "hesap",
+    "hesabi",
+    "hesaplari",
+    "hesaplar",
+    "satis",
+    "satış",
+    "satin",
+    "al",
+    "ve",
+    "ucuz",
+    "kategori",
+    "urun",
+    "ilan",
+    "paket",
+  ]);
   const tokens = categorySlug
     .split("-")
     .map((t) => t.toLowerCase())
-    .filter((t) => t.length >= 4);
+    .filter((t) => t.length >= 3 && !stopWords.has(t));
   if (tokens.length > 0) return tokens;
   const first = categorySlug.split("-")[0]?.toLowerCase();
-  if (first && first.length >= 3) return [first];
+  if (first && first.length >= 2) return [first];
   return [];
 }
 
@@ -153,23 +202,30 @@ export async function findMyRanks(
      if (buyboxRes.ok) {
         const buyboxHtml = await buyboxRes.text();
         const root = parse(buyboxHtml);
-        const advertContainer = root.querySelector('.advert-data');
-        if (advertContainer) {
-           const firstItem = advertContainer.querySelector('a[href]');
-           if (firstItem) {
-              const outerHTML = firstItem.parentNode?.parentNode?.outerHTML || firstItem.outerHTML;
-              const textContent = firstItem.parentNode?.parentNode?.text || firstItem.text || "";
-              const pMatch = textContent.match(/([\d.,]+)\s*(?:₺|TL)/i) || outerHTML.match(/og:price:amount"[^>]+content="([\d.,]+)"/i);
-              if (pMatch) {
-                 marketCheapest = parseTurkishPrice(pMatch[1]);
-                 const href = firstItem.getAttribute("href");
-                 if (href) {
-                   marketCheapestUrl = href.startsWith("http")
-                     ? href
-                     : `https://www.itemsatis.com${href}`;
-                 }
-              }
-           }
+        const firstItem = root
+          .querySelectorAll(".advert-data .AdvertMd a[href]")
+          .find((a) => /-\d{4,12}\.html(?:\?.*)?$/i.test(getPathFromHref(a.getAttribute("href") || "")));
+        if (firstItem) {
+          let container = firstItem as any;
+          for (let i = 0; i < 6; i++) {
+            const parent = container?.parentNode;
+            if (!parent || !parent.outerHTML) break;
+            container = parent;
+          }
+          const outerHTML = container?.outerHTML || firstItem.outerHTML;
+          const textContent = container?.text || firstItem.text || "";
+          const pMatch =
+            textContent.match(/([\d.,]+)\s*(?:₺|TL)/i) ||
+            outerHTML.match(/og:price:amount"[^>]+content="([\d.,]+)"/i);
+          if (pMatch) {
+            marketCheapest = parseTurkishPrice(pMatch[1]);
+            const href = firstItem.getAttribute("href");
+            if (href) {
+              marketCheapestUrl = href.startsWith("http")
+                ? href
+                : `https://www.itemsatis.com${href}`;
+            }
+          }
         }
      }
   } catch(e) {}
@@ -189,16 +245,11 @@ export async function findMyRanks(
          const html = await apiRes.text();
          const root = parse(html);
          
-        // Bu sayfa zaten ilgili kategori listesi; ilan href'leri başlık slug'ı kullanır (crunchyroll-... vs kategori crunchyroll-hesap-satis).
-        // categoryPrefix ile süzmek birçok kategoriyi (Crunchyroll vb.) tamamen bozar.
-        const links = Array.from(root.querySelectorAll("a[href]")).filter((a) => {
+        // Sadece kategori kartlarındaki ilan linklerini tara. Geniş a[href] taraması vitrin/yan modül linklerini dahil edip rank'i bozuyordu.
+        const links = Array.from(root.querySelectorAll(".advert-data .AdvertMd a[href]")).filter((a) => {
           const h = a.getAttribute("href") || "";
-          const path = h.startsWith("http") ? (() => { try { return new URL(h).pathname; } catch { return h; } })() : h;
-          return (
-            /-\d{4,12}\.html(?:\?.*)?$/i.test(path) &&
-            !path.includes("/profil/") &&
-            !path.includes("/ilanlar")
-          );
+          const path = getPathFromHref(h);
+          return /-\d{4,12}\.html(?:\?.*)?$/i.test(path);
         });
 
          const uniqueLinks = new Map();
@@ -210,19 +261,15 @@ export async function findMyRanks(
 
          for (const [href, linkNode] of Array.from(uniqueLinks.entries())) {
            const hrefStr = href || "";
-           const listingPath = hrefStr.startsWith("http")
-             ? (() => { try { return new URL(hrefStr).pathname; } catch { return hrefStr; } })()
-             : hrefStr;
+           const listingPath = getPathFromHref(hrefStr);
            const listingId = extractListingId(listingPath);
            if (!listingId || seenListingIds.has(listingId)) {
              continue;
            }
 
-            let container = linkNode;
-            for(let i=0; i<8; i++) {
-               let cls = container.getAttribute('class') || '';
-               if (cls.includes('advert-data') || cls.includes('post-card') || cls.includes('card') || cls.includes('vitrin')) break;
-               if (container.parentNode && container.parentNode.getAttribute) {
+            let container = linkNode as any;
+            for(let i=0; i<6; i++) {
+               if (container.parentNode && (container.parentNode as any).outerHTML) {
                    container = container.parentNode as any;
                } else { break; }
             }
@@ -236,12 +283,9 @@ export async function findMyRanks(
                price = parseTurkishPrice(pMatch[1]);
             }
 
-            let seller = "";
-            const sellerNode = container.querySelector("a[href*='/profil/']");
-            if (sellerNode) {
-               seller = sellerNode.getAttribute("href")?.split('/profil/')[1]?.replace('.html', '') || "";
-            } else if (outerHTML.toLowerCase().includes(normalizedStoreName)) {
-               seller = normalizedStoreName;
+            let seller = getNearestSeller(linkNode);
+            if (!seller && outerHTML.toLowerCase().includes(normalizedStoreName)) {
+              seller = normalizedStoreName;
             }
 
             // Listing card doğrulaması: satıcı bilgisi ya da fiyat görünmeli.
